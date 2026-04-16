@@ -1,0 +1,37 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  --color-surface: #050505;
+  --color-surface-elevated: #0a0a0a;
+  --color-border-subtle: #1a1a1a;
+  --color-foreground: #e8e8e8;
+  --color-foreground-muted: #8a8a8a;
+}
+
+@layer base {
+  html {
+    @apply scroll-smooth antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    @apply bg-[var(--color-surface)] text-[var(--color-foreground)] font-sans font-[350] tracking-[-0.01em];
+  }
+
+  ::selection {
+    @apply bg-white/10 text-white;
+  }
+
+  a:focus-visible,
+  button:focus-visible {
+    @apply outline outline-1 outline-offset-4 outline-white/40;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Sora', ui-sans-serif, system-ui, sans-serif;
+  }
+}
