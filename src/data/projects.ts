@@ -1,15 +1,11 @@
 import type { Project } from '@/types'
 
-/**
- * Mock projects — replace with Supabase `from('projects').select()` later.
- * Keep field names aligned with your database columns.
- */
 export const projects: Project[] = [
   {
     id: 'p1',
     title: 'Nocturne',
     slug: 'nocturne',
-    category: 'music-videos',
+    categories: ['music-videos'],
     thumbnail: 'https://picsum.photos/seed/nocturne/1600/1000',
     embedType: 'youtube',
     embedUrl: 'https://www.youtube.com/embed/LjCzPp-MK48',
@@ -21,15 +17,15 @@ export const projects: Project[] = [
       'https://picsum.photos/seed/nocturne-e/1200/800',
       'https://picsum.photos/seed/nocturne-f/1200/800',
     ],
-    description:
-      'Night-led performance piece with sculptural lighting and long, patient takes.',
+    description: 'Night-led performance piece with sculptural lighting and long, patient takes.',
     year: '2025',
+    isHidden: false,
   },
   {
     id: 'p2',
     title: 'Glass Echo',
     slug: 'glass-echo',
-    category: 'music-videos',
+    categories: ['music-videos'],
     thumbnail: 'https://picsum.photos/seed/glassecho/1600/1000',
     embedType: 'vimeo',
     embedUrl: 'https://player.vimeo.com/video/76979871',
@@ -43,12 +39,13 @@ export const projects: Project[] = [
     ],
     description: 'Minimal set, reflective surfaces, and a restrained color palette.',
     year: '2024',
+    isHidden: false,
   },
   {
     id: 'p3',
     title: 'Synthetic Bloom',
     slug: 'synthetic-bloom',
-    category: 'ai-works',
+    categories: ['ai-works'],
     thumbnail: 'https://picsum.photos/seed/synthetic/1600/1000',
     embedType: 'youtube',
     embedUrl: 'https://www.youtube.com/embed/9bZkp7q19f0',
@@ -62,12 +59,13 @@ export const projects: Project[] = [
     ],
     description: 'Generative environments blended with live-action plates.',
     year: '2025',
+    isHidden: false,
   },
   {
     id: 'p4',
     title: 'Neural Tide',
     slug: 'neural-tide',
-    category: 'ai-works',
+    categories: ['ai-works'],
     thumbnail: 'https://picsum.photos/seed/neural/1600/1000',
     embedType: 'youtube',
     embedUrl: 'https://www.youtube.com/embed/ScMzIvxBSi4',
@@ -80,12 +78,13 @@ export const projects: Project[] = [
       'https://picsum.photos/seed/neural-f/1200/800',
     ],
     year: '2024',
+    isHidden: false,
   },
   {
     id: 'p5',
     title: 'Atlas Motors — Launch',
     slug: 'atlas-motors-launch',
-    category: 'commercials',
+    categories: ['commercials'],
     thumbnail: 'https://picsum.photos/seed/atlas/1600/1000',
     embedType: 'vimeo',
     embedUrl: 'https://player.vimeo.com/video/148751763',
@@ -99,12 +98,13 @@ export const projects: Project[] = [
     ],
     description: 'Automotive launch film emphasizing form, motion, and silence.',
     year: '2025',
+    isHidden: false,
   },
   {
     id: 'p6',
     title: 'Studio North — Identity',
     slug: 'studio-north-identity',
-    category: 'commercials',
+    categories: ['commercials'],
     thumbnail: 'https://picsum.photos/seed/studionorth/1600/1000',
     embedType: 'youtube',
     embedUrl: 'https://www.youtube.com/embed/uelHwf8o7_U',
@@ -117,12 +117,13 @@ export const projects: Project[] = [
       'https://picsum.photos/seed/studionorth-f/1200/800',
     ],
     year: '2023',
+    isHidden: false,
   },
   {
     id: 'p7',
     title: 'Velvet Static',
     slug: 'velvet-static',
-    category: 'music-videos',
+    categories: ['music-videos'],
     thumbnail: 'https://picsum.photos/seed/velvet/1600/1000',
     embedType: 'youtube',
     embedUrl: 'https://www.youtube.com/embed/FTQbiNvZqaY',
@@ -135,12 +136,13 @@ export const projects: Project[] = [
       'https://picsum.photos/seed/velvet-f/1200/800',
     ],
     year: '2024',
+    isHidden: false,
   },
   {
     id: 'p8',
     title: 'Chromatic Drift',
     slug: 'chromatic-drift',
-    category: 'ai-works',
+    categories: ['ai-works'],
     thumbnail: 'https://picsum.photos/seed/chromatic/1600/1000',
     embedType: 'vimeo',
     embedUrl: 'https://player.vimeo.com/video/22439234',
@@ -154,5 +156,6 @@ export const projects: Project[] = [
     ],
     description: 'Abstract narrative built from temporal drift and color separation.',
     year: '2023',
+    isHidden: false,
   },
 ]

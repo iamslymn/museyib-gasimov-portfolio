@@ -7,6 +7,14 @@ import { Contact } from '@/pages/Contact'
 import { Home } from '@/pages/Home'
 import { NotFound } from '@/pages/NotFound'
 import { ProjectDetail } from '@/pages/ProjectDetail'
+import { AdminDashboard } from '@/pages/admin/AdminDashboard'
+import { AdminEditProject } from '@/pages/admin/AdminEditProject'
+import { AdminLayout } from '@/pages/admin/AdminLayout'
+import { AdminLogin } from '@/pages/admin/AdminLogin'
+import { AdminNewArchive } from '@/pages/admin/AdminNewArchive'
+import { AdminNewProject } from '@/pages/admin/AdminNewProject'
+
+import { AdminProtectedRoute } from './AdminProtectedRoute'
 
 export function AppRoutes() {
   return (
@@ -21,8 +29,24 @@ export function AppRoutes() {
           <Route path="/contact" element={<Contact />} />
           <Route path="/project/:slug" element={<ProjectDetail />} />
           <Route path="/404" element={<NotFound />} />
-          <Route path="*" element={<Navigate to="/404" replace />} />
         </Route>
+
+        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route
+          path="/admin"
+          element={
+            <AdminProtectedRoute>
+              <AdminLayout />
+            </AdminProtectedRoute>
+          }
+        >
+          <Route index element={<AdminDashboard />} />
+          <Route path="projects/new" element={<AdminNewProject />} />
+          <Route path="projects/:id/edit" element={<AdminEditProject />} />
+          <Route path="archive/new" element={<AdminNewArchive />} />
+        </Route>
+
+        <Route path="*" element={<Navigate to="/404" replace />} />
       </Routes>
     </BrowserRouter>
   )

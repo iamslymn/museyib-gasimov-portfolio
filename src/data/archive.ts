@@ -1,16 +1,15 @@
-import type { ArchiveImage } from '@/types'
+import type { ArchiveItem } from '@/types'
 
 import { projects } from './projects'
 
 /**
- * Standalone archive entries — can later be `from('archive_images').select()`
- * or a join with projects.
+ * Seed archive rows — derived from project gallery stills so the page is populated
+ * before Supabase is wired up. Replace with `supabase.from('archive_items').select()`.
  */
-export const archiveImages: ArchiveImage[] = projects.flatMap((p) =>
+export const archiveSeed: ArchiveItem[] = projects.flatMap((p) =>
   p.galleryImages.slice(0, 3).map((imageUrl, index) => ({
     id: `${p.id}-arch-${index}`,
-    projectId: p.id,
     imageUrl,
-    alt: `${p.title} — still ${index + 1}`,
+    title: `${p.title} — still ${index + 1}`,
   })),
 )

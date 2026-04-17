@@ -1,0 +1,258 @@
+import { projectsSeed } from '@/data'
+import type { EditProjectInput, NewProjectInput, Project, ProjectCategory } from '@/types'
+
+import { uploadImage, uploadImages } from './storage'
+import { STORAGE_BUCKETS, supabase } from './supabase'
+
+const mockStore: Project[] = projectsSeed.map((p) => ({ ...p }))
+
+function sortByYearDesc(list: Project[]) {
+  return [...list].sort((a, b) => (b.year ?? '').localeCompare(a.year ?? ''))
+}
+
+type DbProject = {
+  id: string
+  title: string
+  slug: string
+  /** Stored as text[] in Supabase. */
+  categories: string[]
+  embed_type: string
+  embed_url: string
+  thumbnail_url: string
+  is_hidden: boolean
+  description: string | null
+  year: string | null
+  created_at: string
+  project_images: { image_url: string; sort_order: number }[]
+}
+
+function mapRow(row: DbProject): Project {
+  return {
+    id: row.id,
+    title: row.title,
+    slug: row.slug,
+    categories: (row.categories ?? []) as ProjectCategory[],
+    embedType: row.embed_type as 'youtube' | 'vimeo',
+    embedUrl: row.embed_url,
+    thumbnail: row.thumbnail_url,
+    isHidden: row.is_hidden ?? false,
+    galleryImages: [...(row.project_images ?? [])]
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((img) => img.image_url),
+    description: row.description ?? undefined,
+    year: row.year ?? undefined,
+    createdAt: row.created_at,
+  }
+}
+
+/** Public pages: excludes hidden projects. */
+export async function listProjects(): Promise<Project[]> {
+  if (!supabase) return sortByYearDesc(mockStore.filter((p) => !p.isHidden))
+
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*, project_images(image_url, sort_order)')
+    .eq('is_hidden', false)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return (data as DbProject[]).map(mapRow)
+}
+
+/** Public pages: filters by whether the `categories` array contains the given category. */
+export async function listProjectsByCategory(category: ProjectCategory): Promise<Project[]> {
+  if (!supabase) {
+    return sortByYearDesc(
+      mockStore.filter((p) => !p.isHidden && p.categories.includes(category)),
+    )
+  }
+
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*, project_images(image_url, sort_order)')
+    .eq('is_hidden', false)
+    .filter('categories', 'cs', `{"${category}"}`)
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return (data as DbProject[]).map(mapRow)
+}
+
+/** Admin only: all projects, including hidden. */
+export async function listAllProjectsForAdmin(): Promise<Project[]> {
+  if (!supabase) return sortByYearDesc([...mockStore])
+
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*, project_images(image_url, sort_order)')
+    .order('created_at', { ascending: false })
+
+  if (error) throw error
+  return (data as DbProject[]).map(mapRow)
+}
+
+export async function getProjectBySlug(slug: string): Promise<Project | null> {
+  if (!supabase) return mockStore.find((p) => p.slug === slug) ?? null
+
+  const { data, error } = await supabase
+    .from('projects')
+    .select('*, project_images(image_url, sort_order)')
+    .eq('slug', slug)
+    .single()
+
+  if (error) return null
+  return mapRow(data as DbProject)
+}
+
+export async function createProject(input: NewProjectInput): Promise<Project> {
+  const thumbnail = input.thumbnailFile
+    ? await uploadImage(STORAGE_BUCKETS.projectThumbnails, input.thumbnailFile)
+    : ''
+
+  const galleryUrls = input.galleryFiles.length
+    ? await uploadImages(STORAGE_BUCKETS.projectGallery, input.galleryFiles)
+    : []
+
+  if (!supabase) {
+    const project: Project = {
+      id: `p-${Date.now()}`,
+      title: input.title,
+      slug: input.slug,
+      categories: input.categories,
+      thumbnail,
+      embedType: input.embedType,
+      embedUrl: input.embedUrl,
+      galleryImages: galleryUrls,
+      isHidden: input.isHidden ?? false,
+      description: input.description,
+      year: input.year,
+      createdAt: new Date().toISOString(),
+    }
+    mockStore.unshift(project)
+    return project
+  }
+
+  const { data, error } = await supabase
+    .from('projects')
+    .insert({
+      title: input.title,
+      slug: input.slug,
+      categories: input.categories,
+      embed_type: input.embedType,
+      embed_url: input.embedUrl,
+      thumbnail_url: thumbnail,
+      is_hidden: input.isHidden ?? false,
+      description: input.description ?? null,
+      year: input.year ?? null,
+    })
+    .select()
+    .single()
+
+  if (error) throw error
+  const created = data as DbProject
+
+  if (galleryUrls.length) {
+    const { error: imgError } = await supabase.from('project_images').insert(
+      galleryUrls.map((url, i) => ({
+        project_id: created.id,
+        image_url: url,
+        sort_order: i,
+      })),
+    )
+    if (imgError) throw imgError
+  }
+
+  return mapRow({
+    ...created,
+    project_images: galleryUrls.map((url, i) => ({ image_url: url, sort_order: i })),
+  })
+}
+
+export async function updateProject(input: EditProjectInput): Promise<Project> {
+  const thumbnail = input.thumbnailFile
+    ? await uploadImage(STORAGE_BUCKETS.projectThumbnails, input.thumbnailFile)
+    : input.thumbnailExistingUrl
+
+  const newGalleryUrls = input.galleryNewFiles.length
+    ? await uploadImages(STORAGE_BUCKETS.projectGallery, input.galleryNewFiles)
+    : []
+
+  const finalGallery = [...input.galleryExistingUrls, ...newGalleryUrls]
+
+  if (!supabase) {
+    const idx = mockStore.findIndex((p) => p.id === input.id)
+    if (idx === -1) throw new Error('Project not found.')
+    const updated: Project = {
+      ...mockStore[idx],
+      title: input.title,
+      slug: input.slug,
+      categories: input.categories,
+      embedType: input.embedType,
+      embedUrl: input.embedUrl,
+      thumbnail,
+      galleryImages: finalGallery,
+      isHidden: input.isHidden,
+      description: input.description,
+      year: input.year,
+    }
+    mockStore[idx] = updated
+    return updated
+  }
+
+  const { data, error } = await supabase
+    .from('projects')
+    .update({
+      title: input.title,
+      slug: input.slug,
+      categories: input.categories,
+      embed_type: input.embedType,
+      embed_url: input.embedUrl,
+      thumbnail_url: thumbnail,
+      is_hidden: input.isHidden,
+      description: input.description ?? null,
+      year: input.year ?? null,
+    })
+    .eq('id', input.id)
+    .select()
+    .single()
+
+  if (error) throw error
+
+  await supabase.from('project_images').delete().eq('project_id', input.id)
+
+  if (finalGallery.length) {
+    const { error: imgError } = await supabase.from('project_images').insert(
+      finalGallery.map((url, i) => ({
+        project_id: input.id,
+        image_url: url,
+        sort_order: i,
+      })),
+    )
+    if (imgError) throw imgError
+  }
+
+  return mapRow({
+    ...(data as DbProject),
+    project_images: finalGallery.map((url, i) => ({ image_url: url, sort_order: i })),
+  })
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  if (!supabase) {
+    const idx = mockStore.findIndex((p) => p.id === id)
+    if (idx !== -1) mockStore.splice(idx, 1)
+    return
+  }
+  const { error } = await supabase.from('projects').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function toggleProjectVisibility(id: string, isHidden: boolean): Promise<void> {
+  if (!supabase) {
+    const p = mockStore.find((p) => p.id === id)
+    if (p) p.isHidden = isHidden
+    return
+  }
+  const { error } = await supabase.from('projects').update({ is_hidden: isHidden }).eq('id', id)
+  if (error) throw error
+}
