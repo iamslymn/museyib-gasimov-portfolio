@@ -24,7 +24,6 @@ import {
   createArchiveItem,
   deleteArchiveItem,
   deleteProject,
-  loadArchiveOrder,
   loadCategoryProjectOrder,
   loadFeaturedOrder,
   reorderFeatured,
@@ -239,9 +238,9 @@ export function AdminDashboard() {
   const [featuredOrderSaved, setFeaturedOrderSaved] = useState(false)
 
   const orderApplied = useRef(false)
-  const archiveOrderApplied = useRef(false)
 
-  // Load all saved orders from localStorage once projects are available
+  // Load saved category/featured orders from localStorage once projects are available.
+  // Archive order is applied directly inside listArchiveItems(), so no effect needed here.
   useEffect(() => {
     if (!projectsLoading && !orderApplied.current) {
       orderApplied.current = true
@@ -257,21 +256,6 @@ export function AdminDashboard() {
       if (fo && fo.length > 0) setFeaturedOrder(fo)
     }
   }, [projectsLoading])
-
-  useEffect(() => {
-    if (!archiveLoading && !archiveOrderApplied.current) {
-      archiveOrderApplied.current = true
-      const saved = loadArchiveOrder()
-      if (saved && saved.length > 0) {
-        setArchive((curr) => {
-          const map = new Map(curr.map((i) => [i.id, i]))
-          const ordered = saved.map((id) => map.get(id)).filter((i): i is ArchiveItem => !!i)
-          const extra = curr.filter((i) => !saved.includes(i.id))
-          return [...ordered, ...extra]
-        })
-      }
-    }
-  }, [archiveLoading, setArchive])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),

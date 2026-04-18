@@ -22,8 +22,18 @@ function mapRow(row: DbArchiveItem): ArchiveItem {
   }
 }
 
+function applyOrder(items: ArchiveItem[], order: string[] | null): ArchiveItem[] {
+  if (!order || order.length === 0) return items
+  const map = new Map(items.map((i) => [i.id, i]))
+  const ordered = order.map((id) => map.get(id)).filter((i): i is ArchiveItem => !!i)
+  const rest = items.filter((i) => !order.includes(i.id))
+  return [...ordered, ...rest]
+}
+
 export async function listArchiveItems(): Promise<ArchiveItem[]> {
-  if (!supabase) return [...mockStore]
+  const saved = loadArchiveOrder()
+
+  if (!supabase) return applyOrder([...mockStore], saved)
 
   const { data, error } = await supabase
     .from('archive_items')
@@ -31,7 +41,7 @@ export async function listArchiveItems(): Promise<ArchiveItem[]> {
     .order('created_at', { ascending: false })
 
   if (error) throw error
-  return (data as DbArchiveItem[]).map(mapRow)
+  return applyOrder((data as DbArchiveItem[]).map(mapRow), saved)
 }
 
 export async function createArchiveItem(input: NewArchiveItemInput): Promise<ArchiveItem> {
