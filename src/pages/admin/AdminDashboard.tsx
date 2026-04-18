@@ -191,6 +191,7 @@ export function AdminDashboard() {
   const [archiveUploading, setArchiveUploading] = useState(false)
   const [savingOrder, setSavingOrder] = useState(false)
   const [orderSaved, setOrderSaved] = useState(false)
+  const [orderSaveError, setOrderSaveError] = useState<string | null>(null)
   const [projectsReordered, setProjectsReordered] = useState(false)
 
   // Apply saved sort order once after initial load
@@ -248,10 +249,13 @@ export function AdminDashboard() {
 
   const handleSaveOrder = async () => {
     setSavingOrder(true)
+    setOrderSaveError(null)
     try {
       await reorderProjects(projects.map((p) => p.id))
       setOrderSaved(true)
       setProjectsReordered(false)
+    } catch (err) {
+      setOrderSaveError(err instanceof Error ? err.message : 'Failed to save order.')
     } finally {
       setSavingOrder(false)
     }
@@ -361,12 +365,26 @@ export function AdminDashboard() {
                   onToggle={handleToggleHidden}
                 />
               ))}
-              {!projectsLoading && projects.length === 0 ? (
+                  {!projectsLoading && projects.length === 0 ? (
                 <p className="col-span-full text-sm text-white/50">No projects yet.</p>
               ) : null}
             </div>
           </SortableContext>
         </DndContext>
+
+        {orderSaveError ? (
+          <div className="mt-4 border border-red-400/30 bg-red-400/5 p-4">
+            <p className="mb-2 text-[11px] uppercase tracking-[0.2em] text-red-400">
+              Could not save order to database
+            </p>
+            <p className="mb-3 text-xs text-white/50">
+              Run this SQL once in your Supabase SQL editor, then try again:
+            </p>
+            <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded bg-black/60 p-3 text-[11px] text-white/70">
+              {`ALTER TABLE projects ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0;\nUPDATE projects p SET sort_order = sub.rn - 1 FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY created_at DESC) rn FROM projects) sub WHERE p.id = sub.id;`}
+            </pre>
+          </div>
+        ) : null}
       </section>
 
       {/* ── Archive ── */}

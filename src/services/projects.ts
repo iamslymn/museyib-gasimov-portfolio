@@ -6,6 +6,35 @@ import { STORAGE_BUCKETS, supabase } from './supabase'
 
 const mockStore: Project[] = projectsSeed.map((p) => ({ ...p }))
 
+/** Apply saved localStorage order on top of a fetched list. */
+function applyClientOrder(projects: Project[]): Project[] {
+  const saved = loadProjectOrder()
+  if (!saved || saved.length === 0) return projects
+  const map = new Map(projects.map((p) => [p.id, p]))
+  const ordered = saved.map((id) => map.get(id)).filter((p): p is Project => !!p)
+  const rest = projects.filter((p) => !saved.includes(p.id))
+  return [...ordered, ...rest]
+}
+
+/**
+ * Run a Supabase projects query ordered by sort_order first.
+ * Falls back to created_at desc if sort_order column does not exist yet.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function queryProjects(apply: (q: any) => any): Promise<Project[]> {
+  const base = () =>
+    apply(supabase!.from('projects').select('*, project_images(image_url, sort_order)'))
+
+  const { data, error } = await base().order('sort_order', { ascending: true, nullsFirst: false })
+
+  if (!error) return applyClientOrder((data as DbProject[]).map(mapRow))
+
+  // Column likely does not exist yet — fall back to created_at
+  const { data: d2, error: e2 } = await base().order('created_at', { ascending: false })
+  if (e2) throw e2
+  return applyClientOrder((d2 as DbProject[]).map(mapRow))
+}
+
 type DbProject = {
   id: string
   title: string
@@ -54,14 +83,7 @@ export async function listProjects(): Promise<Project[]> {
     return [...ordered, ...rest]
   }
 
-  const { data, error } = await supabase
-    .from('projects')
-    .select('*, project_images(image_url, sort_order)')
-    .eq('is_hidden', false)
-    .order('sort_order', { ascending: true })
-
-  if (error) throw error
-  return (data as DbProject[]).map(mapRow)
+  return queryProjects((q) => q.eq('is_hidden', false))
 }
 
 /** Public pages: filters by whether the `categories` array contains the given category. */
@@ -76,15 +98,7 @@ export async function listProjectsByCategory(category: ProjectCategory): Promise
     return [...ordered, ...rest]
   }
 
-  const { data, error } = await supabase
-    .from('projects')
-    .select('*, project_images(image_url, sort_order)')
-    .eq('is_hidden', false)
-    .filter('categories', 'cs', `{"${category}"}`)
-    .order('sort_order', { ascending: true })
-
-  if (error) throw error
-  return (data as DbProject[]).map(mapRow)
+  return queryProjects((q) => q.eq('is_hidden', false).filter('categories', 'cs', `{"${category}"}`))
 }
 
 /** Admin only: all projects, including hidden. */
@@ -98,13 +112,7 @@ export async function listAllProjectsForAdmin(): Promise<Project[]> {
     return [...ordered, ...rest]
   }
 
-  const { data, error } = await supabase
-    .from('projects')
-    .select('*, project_images(image_url, sort_order)')
-    .order('sort_order', { ascending: true })
-
-  if (error) throw error
-  return (data as DbProject[]).map(mapRow)
+  return queryProjects((q) => q)
 }
 
 export async function getProjectBySlug(slug: string): Promise<Project | null> {
@@ -294,7 +302,16 @@ export async function reorderProjects(ids: string[]): Promise<void> {
     ids.map((id, index) => ({ id, sort_order: index })),
     { onConflict: 'id' },
   )
-  if (error) throw error
+  if (error) {
+    if (error.message?.includes('sort_order') || error.code === '42703') {
+      throw new Error(
+        'Run this SQL in your Supabase project first:\n\n' +
+        'ALTER TABLE projects ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0;\n' +
+        'UPDATE projects p SET sort_order = sub.rn - 1 FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY created_at DESC) rn FROM projects) sub WHERE p.id = sub.id;',
+      )
+    }
+    throw error
+  }
 }
 
 export async function toggleProjectVisibility(id: string, isHidden: boolean): Promise<void> {
