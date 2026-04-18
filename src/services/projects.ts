@@ -6,10 +6,6 @@ import { STORAGE_BUCKETS, supabase } from './supabase'
 
 const mockStore: Project[] = projectsSeed.map((p) => ({ ...p }))
 
-function sortByYearDesc(list: Project[]) {
-  return [...list].sort((a, b) => (b.year ?? '').localeCompare(a.year ?? ''))
-}
-
 type DbProject = {
   id: string
   title: string
@@ -22,6 +18,7 @@ type DbProject = {
   is_hidden: boolean
   description: string | null
   year: string | null
+  sort_order: number
   created_at: string
   project_images: { image_url: string; sort_order: number }[]
 }
@@ -47,13 +44,21 @@ function mapRow(row: DbProject): Project {
 
 /** Public pages: excludes hidden projects. */
 export async function listProjects(): Promise<Project[]> {
-  if (!supabase) return sortByYearDesc(mockStore.filter((p) => !p.isHidden))
+  if (!supabase) {
+    const saved = loadProjectOrder()
+    const visible = mockStore.filter((p) => !p.isHidden)
+    if (!saved) return visible
+    const map = new Map(visible.map((p) => [p.id, p]))
+    const ordered = saved.map((id) => map.get(id)).filter((p): p is Project => !!p)
+    const rest = visible.filter((p) => !saved.includes(p.id))
+    return [...ordered, ...rest]
+  }
 
   const { data, error } = await supabase
     .from('projects')
     .select('*, project_images(image_url, sort_order)')
     .eq('is_hidden', false)
-    .order('created_at', { ascending: false })
+    .order('sort_order', { ascending: true })
 
   if (error) throw error
   return (data as DbProject[]).map(mapRow)
@@ -62,9 +67,13 @@ export async function listProjects(): Promise<Project[]> {
 /** Public pages: filters by whether the `categories` array contains the given category. */
 export async function listProjectsByCategory(category: ProjectCategory): Promise<Project[]> {
   if (!supabase) {
-    return sortByYearDesc(
-      mockStore.filter((p) => !p.isHidden && p.categories.includes(category)),
-    )
+    const saved = loadProjectOrder()
+    const visible = mockStore.filter((p) => !p.isHidden && p.categories.includes(category))
+    if (!saved) return visible
+    const map = new Map(visible.map((p) => [p.id, p]))
+    const ordered = saved.map((id) => map.get(id)).filter((p): p is Project => !!p)
+    const rest = visible.filter((p) => !saved.includes(p.id))
+    return [...ordered, ...rest]
   }
 
   const { data, error } = await supabase
@@ -72,7 +81,7 @@ export async function listProjectsByCategory(category: ProjectCategory): Promise
     .select('*, project_images(image_url, sort_order)')
     .eq('is_hidden', false)
     .filter('categories', 'cs', `{"${category}"}`)
-    .order('created_at', { ascending: false })
+    .order('sort_order', { ascending: true })
 
   if (error) throw error
   return (data as DbProject[]).map(mapRow)
@@ -80,12 +89,19 @@ export async function listProjectsByCategory(category: ProjectCategory): Promise
 
 /** Admin only: all projects, including hidden. */
 export async function listAllProjectsForAdmin(): Promise<Project[]> {
-  if (!supabase) return sortByYearDesc([...mockStore])
+  if (!supabase) {
+    const saved = loadProjectOrder()
+    if (!saved) return [...mockStore]
+    const map = new Map(mockStore.map((p) => [p.id, p]))
+    const ordered = saved.map((id) => map.get(id)).filter((p): p is Project => !!p)
+    const rest = mockStore.filter((p) => !saved.includes(p.id))
+    return [...ordered, ...rest]
+  }
 
   const { data, error } = await supabase
     .from('projects')
     .select('*, project_images(image_url, sort_order)')
-    .order('created_at', { ascending: false })
+    .order('sort_order', { ascending: true })
 
   if (error) throw error
   return (data as DbProject[]).map(mapRow)
@@ -260,6 +276,25 @@ export function loadProjectOrder(): string[] | null {
   } catch {
     return null
   }
+}
+
+/** Persists the drag order to Supabase (sort_order column) and localStorage. */
+export async function reorderProjects(ids: string[]): Promise<void> {
+  saveProjectOrder(ids)
+
+  if (!supabase) {
+    const map = new Map(mockStore.map((p) => [p.id, p]))
+    const ordered = ids.map((id) => map.get(id)).filter((p): p is Project => !!p)
+    const rest = mockStore.filter((p) => !ids.includes(p.id))
+    mockStore.splice(0, mockStore.length, ...ordered, ...rest)
+    return
+  }
+
+  const { error } = await supabase.from('projects').upsert(
+    ids.map((id, index) => ({ id, sort_order: index })),
+    { onConflict: 'id' },
+  )
+  if (error) throw error
 }
 
 export async function toggleProjectVisibility(id: string, isHidden: boolean): Promise<void> {

@@ -26,6 +26,7 @@ import {
   deleteProject,
   loadArchiveOrder,
   loadProjectOrder,
+  reorderProjects,
   saveArchiveOrder,
   saveProjectOrder,
   toggleProjectVisibility,
@@ -188,6 +189,9 @@ export function AdminDashboard() {
   const [togglingProjectId, setTogglingProjectId] = useState<string | null>(null)
   const [deletingArchiveId, setDeletingArchiveId] = useState<string | null>(null)
   const [archiveUploading, setArchiveUploading] = useState(false)
+  const [savingOrder, setSavingOrder] = useState(false)
+  const [orderSaved, setOrderSaved] = useState(false)
+  const [projectsReordered, setProjectsReordered] = useState(false)
 
   // Apply saved sort order once after initial load
   const projectOrderApplied = useRef(false)
@@ -238,6 +242,19 @@ export function AdminDashboard() {
       saveProjectOrder(reordered.map((p) => p.id))
       return reordered
     })
+    setProjectsReordered(true)
+    setOrderSaved(false)
+  }
+
+  const handleSaveOrder = async () => {
+    setSavingOrder(true)
+    try {
+      await reorderProjects(projects.map((p) => p.id))
+      setOrderSaved(true)
+      setProjectsReordered(false)
+    } finally {
+      setSavingOrder(false)
+    }
   }
 
   const handleArchiveDragEnd = (event: DragEndEvent) => {
@@ -307,12 +324,28 @@ export function AdminDashboard() {
               {projectsLoading ? 'Loading…' : `${projects.length} total`}
             </p>
           </div>
-          <Link
-            to="/admin/projects/new"
-            className="border border-white/20 px-4 py-2 text-[11px] uppercase tracking-[0.24em] text-white transition-colors hover:border-white/40 hover:bg-white/5"
-          >
-            + New project
-          </Link>
+          <div className="flex items-center gap-3">
+            {(projectsReordered || orderSaved) && !projectsLoading ? (
+              <button
+                type="button"
+                disabled={savingOrder || orderSaved}
+                onClick={handleSaveOrder}
+                className={`px-4 py-2 text-[11px] uppercase tracking-[0.24em] transition-colors ${
+                  orderSaved
+                    ? 'border border-white/10 text-white/30 cursor-default'
+                    : 'border border-white/40 bg-white/5 text-white hover:bg-white/10 disabled:opacity-50'
+                }`}
+              >
+                {savingOrder ? 'Saving…' : orderSaved ? '✓ Order saved' : 'Save order'}
+              </button>
+            ) : null}
+            <Link
+              to="/admin/projects/new"
+              className="border border-white/20 px-4 py-2 text-[11px] uppercase tracking-[0.24em] text-white transition-colors hover:border-white/40 hover:bg-white/5"
+            >
+              + New project
+            </Link>
+          </div>
         </div>
 
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleProjectDragEnd}>

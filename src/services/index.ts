@@ -8,6 +8,7 @@ export {
   listProjects,
   listProjectsByCategory,
   loadProjectOrder,
+  reorderProjects,
   saveProjectOrder,
   toggleProjectVisibility,
   updateProject,
