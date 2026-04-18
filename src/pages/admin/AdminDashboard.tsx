@@ -15,7 +15,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import { useArchive } from '@/hooks/useArchive'
@@ -25,14 +25,16 @@ import {
   deleteArchiveItem,
   deleteProject,
   loadArchiveOrder,
-  loadProjectOrder,
+  loadCategoryProjectOrder,
   reorderProjects,
+  saveCategoryProjectOrder,
   saveArchiveOrder,
-  saveProjectOrder,
   toggleProjectVisibility,
 } from '@/services'
-import type { ArchiveItem, Project } from '@/types'
+import type { ArchiveItem, Project, ProjectCategory } from '@/types'
 import { PROJECT_CATEGORY_LABEL } from '@/types'
+
+const ALL_CATEGORIES: ProjectCategory[] = ['music-videos', 'ai-works', 'commercials', 'experiments']
 
 const btnBase = 'text-[10px] uppercase tracking-[0.2em] transition-colors duration-150'
 const btnMuted = `${btnBase} text-white/40 hover:text-white/80`
@@ -102,7 +104,7 @@ function SortableProjectCard({ p, deletingId, togglingId, onDelete, onToggle }: 
         <div className="min-w-0">
           <h3 className="truncate text-sm text-white">{p.title}</h3>
           <p className="mt-0.5 text-[10px] uppercase tracking-[0.2em] text-white/40">
-            {p.categories.map((c) => PROJECT_CATEGORY_LABEL[c]).join(' · ')}
+            {p.categories.map((c) => PROJECT_CATEGORY_LABEL[c] ?? c).join(' · ')}
             {p.year ? ` · ${p.year}` : ''}
           </p>
         </div>
@@ -194,24 +196,24 @@ export function AdminDashboard() {
   const [orderSaveError, setOrderSaveError] = useState<string | null>(null)
   const [projectsReordered, setProjectsReordered] = useState(false)
 
-  // Apply saved sort order once after initial load
-  const projectOrderApplied = useRef(false)
+  // Per-category sort orders (keyed by category slug)
+  const [catOrders, setCatOrders] = useState<Partial<Record<ProjectCategory, string[]>>>({})
+
+  // Load per-category orders from localStorage once projects are ready
+  const catOrderApplied = useRef(false)
   const archiveOrderApplied = useRef(false)
 
   useEffect(() => {
-    if (!projectsLoading && !projectOrderApplied.current) {
-      projectOrderApplied.current = true
-      const saved = loadProjectOrder()
-      if (saved && saved.length > 0) {
-        setProjects((curr) => {
-          const map = new Map(curr.map((p) => [p.id, p]))
-          const ordered = saved.map((id) => map.get(id)).filter((p): p is Project => !!p)
-          const extra = curr.filter((p) => !saved.includes(p.id))
-          return [...ordered, ...extra]
-        })
+    if (!projectsLoading && !catOrderApplied.current) {
+      catOrderApplied.current = true
+      const loaded: Partial<Record<ProjectCategory, string[]>> = {}
+      for (const cat of ALL_CATEGORIES) {
+        const order = loadCategoryProjectOrder(cat)
+        if (order && order.length > 0) loaded[cat] = order
       }
+      setCatOrders(loaded)
     }
-  }, [projectsLoading, setProjects])
+  }, [projectsLoading])
 
   useEffect(() => {
     if (!archiveLoading && !archiveOrderApplied.current) {
@@ -233,24 +235,60 @@ export function AdminDashboard() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  const handleProjectDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    setProjects((items) => {
-      const oldIndex = items.findIndex((p) => p.id === active.id)
-      const newIndex = items.findIndex((p) => p.id === over.id)
-      const reordered = arrayMove(items, oldIndex, newIndex)
-      saveProjectOrder(reordered.map((p) => p.id))
-      return reordered
-    })
-    setProjectsReordered(true)
-    setOrderSaved(false)
-  }
+  // Returns the display-sorted list of projects for a given category
+  const getCategoryProjects = useCallback(
+    (cat: ProjectCategory): Project[] => {
+      const catProjects = projects.filter((p) => p.categories.includes(cat))
+      const order = catOrders[cat]
+      if (!order || order.length === 0) return catProjects
+      const map = new Map(catProjects.map((p) => [p.id, p]))
+      const sorted = order.map((id) => map.get(id)).filter((p): p is Project => !!p)
+      const rest = catProjects.filter((p) => !order.includes(p.id))
+      return [...sorted, ...rest]
+    },
+    [projects, catOrders],
+  )
+
+  // Memoize category lists so renders are stable
+  const projectsByCategory = useMemo(
+    () =>
+      ALL_CATEGORIES.reduce(
+        (acc, cat) => {
+          acc[cat] = getCategoryProjects(cat)
+          return acc
+        },
+        {} as Record<ProjectCategory, Project[]>,
+      ),
+    [getCategoryProjects],
+  )
+
+  // Build a drag-end handler for a specific category
+  const makeCategoryDragEnd = useCallback(
+    (cat: ProjectCategory) => (event: DragEndEvent) => {
+      const { active, over } = event
+      if (!over || active.id === over.id) return
+
+      const current = getCategoryProjects(cat)
+      const oldIndex = current.findIndex((p) => p.id === active.id)
+      const newIndex = current.findIndex((p) => p.id === over.id)
+      if (oldIndex === -1 || newIndex === -1) return
+
+      const reordered = arrayMove(current, oldIndex, newIndex)
+      const newIds = reordered.map((p) => p.id)
+
+      saveCategoryProjectOrder(cat, newIds)
+      setCatOrders((prev) => ({ ...prev, [cat]: newIds }))
+      setProjectsReordered(true)
+      setOrderSaved(false)
+    },
+    [getCategoryProjects],
+  )
 
   const handleSaveOrder = async () => {
     setSavingOrder(true)
     setOrderSaveError(null)
     try {
+      // Persist global order to Supabase (best-effort), per-category order already in localStorage
       await reorderProjects(projects.map((p) => p.id))
       setOrderSaved(true)
       setProjectsReordered(false)
@@ -321,7 +359,7 @@ export function AdminDashboard() {
     <div className="space-y-16">
       {/* ── Projects ── */}
       <section>
-        <div className="mb-5 flex items-end justify-between gap-4">
+        <div className="mb-6 flex items-end justify-between gap-4">
           <div>
             <h2 className="font-display text-2xl tracking-[-0.02em] text-white">Projects</h2>
             <p className="mt-0.5 text-[11px] uppercase tracking-[0.22em] text-white/40">
@@ -352,25 +390,52 @@ export function AdminDashboard() {
           </div>
         </div>
 
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleProjectDragEnd}>
-          <SortableContext items={projects.map((p) => p.id)} strategy={rectSortingStrategy}>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {projects.map((p) => (
-                <SortableProjectCard
-                  key={p.id}
-                  p={p}
-                  deletingId={deletingProjectId}
-                  togglingId={togglingProjectId}
-                  onDelete={handleDeleteProject}
-                  onToggle={handleToggleHidden}
-                />
-              ))}
-                  {!projectsLoading && projects.length === 0 ? (
-                <p className="col-span-full text-sm text-white/50">No projects yet.</p>
-              ) : null}
-            </div>
-          </SortableContext>
-        </DndContext>
+        {projectsLoading ? (
+          <p className="text-[11px] uppercase tracking-[0.22em] text-white/30">Loading…</p>
+        ) : (
+          <div className="space-y-10">
+            {ALL_CATEGORIES.map((cat) => {
+              const catProjects = projectsByCategory[cat]
+              return (
+                <div key={cat}>
+                  <h3 className="mb-3 text-[10px] uppercase tracking-[0.28em] text-white/30 border-b border-white/[0.06] pb-2">
+                    {PROJECT_CATEGORY_LABEL[cat]}
+                    <span className="ml-2 text-white/20">({catProjects.length})</span>
+                  </h3>
+
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={makeCategoryDragEnd(cat)}
+                  >
+                    <SortableContext
+                      items={catProjects.map((p) => p.id)}
+                      strategy={rectSortingStrategy}
+                    >
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                        {catProjects.map((p) => (
+                          <SortableProjectCard
+                            key={p.id}
+                            p={p}
+                            deletingId={deletingProjectId}
+                            togglingId={togglingProjectId}
+                            onDelete={handleDeleteProject}
+                            onToggle={handleToggleHidden}
+                          />
+                        ))}
+                        {catProjects.length === 0 ? (
+                          <p className="col-span-full text-[11px] text-white/25 py-4">
+                            No projects in this category yet.
+                          </p>
+                        ) : null}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+                </div>
+              )
+            })}
+          </div>
+        )}
 
         {orderSaveError ? (
           <div className="mt-4 border border-red-400/30 bg-red-400/5 p-4 space-y-3">

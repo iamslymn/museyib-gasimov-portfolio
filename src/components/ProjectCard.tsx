@@ -31,11 +31,11 @@ export function ProjectCard({ project }: ProjectCardProps) {
             className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-[1.02]"
           />
           <div
-            className="pointer-events-none absolute inset-0 bg-black/0 transition-colors duration-500 ease-out group-hover:bg-black/60"
+            className="pointer-events-none absolute inset-0 bg-black/0 transition-colors duration-500 ease-out group-hover:bg-black/60 max-sm:bg-black/55"
             aria-hidden
           />
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
-            <div className="translate-y-2 opacity-0 transition-all duration-500 ease-out group-hover:translate-y-0 group-hover:opacity-100 text-center">
+            <div className="translate-y-2 opacity-0 transition-all duration-500 ease-out group-hover:translate-y-0 group-hover:opacity-100 max-sm:translate-y-0 max-sm:opacity-100 text-center">
               <h2 className="font-display text-xl font-medium tracking-[-0.02em] text-white sm:text-2xl">
                 {project.title}
               </h2>

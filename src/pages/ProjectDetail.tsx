@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { ProjectGallery } from '@/components/ProjectGallery'
 import { VideoEmbed } from '@/components/VideoEmbed'
 import { useProject } from '@/hooks/useProject'
+import { PROJECT_CATEGORY_LABEL } from '@/types'
 
 export function ProjectDetail() {
   const { slug } = useParams()
@@ -47,7 +48,7 @@ export function ProjectDetail() {
             {project.year ? <span>{project.year}</span> : null}
             {project.categories.map((cat) => (
               <span key={cat} className="text-white/50">
-                {cat === 'music-videos' ? 'Music Video' : cat === 'ai-works' ? 'AI Work' : 'Commercial'}
+                {PROJECT_CATEGORY_LABEL[cat] ?? cat}
               </span>
             ))}
           </div>

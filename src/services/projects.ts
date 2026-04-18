@@ -86,19 +86,31 @@ export async function listProjects(): Promise<Project[]> {
   return queryProjects((q) => q.eq('is_hidden', false))
 }
 
+/** Apply a saved order (category-specific or global) to a filtered list. */
+function applyOrder(projects: Project[], order: string[] | null): Project[] {
+  if (!order || order.length === 0) return projects
+  const map = new Map(projects.map((p) => [p.id, p]))
+  const ordered = order.map((id) => map.get(id)).filter((p): p is Project => !!p)
+  const rest = projects.filter((p) => !order.includes(p.id))
+  return [...ordered, ...rest]
+}
+
 /** Public pages: filters by whether the `categories` array contains the given category. */
 export async function listProjectsByCategory(category: ProjectCategory): Promise<Project[]> {
+  const catOrder = loadCategoryProjectOrder(category)
+  const globalOrder = loadProjectOrder()
+
   if (!supabase) {
-    const saved = loadProjectOrder()
     const visible = mockStore.filter((p) => !p.isHidden && p.categories.includes(category))
-    if (!saved) return visible
-    const map = new Map(visible.map((p) => [p.id, p]))
-    const ordered = saved.map((id) => map.get(id)).filter((p): p is Project => !!p)
-    const rest = visible.filter((p) => !saved.includes(p.id))
-    return [...ordered, ...rest]
+    return applyOrder(visible, catOrder ?? globalOrder)
   }
 
-  return queryProjects((q) => q.eq('is_hidden', false).filter('categories', 'cs', `{"${category}"}`))
+  const projects = await queryProjects((q) =>
+    q.eq('is_hidden', false).filter('categories', 'cs', `{"${category}"}`),
+  )
+  // Per-category order takes precedence over the global order already applied by queryProjects
+  if (catOrder && catOrder.length > 0) return applyOrder(projects, catOrder)
+  return projects
 }
 
 /** Admin only: all projects, including hidden. */
@@ -272,6 +284,7 @@ export async function deleteProject(id: string): Promise<void> {
 }
 
 const PROJECT_ORDER_KEY = 'admin_project_order'
+const CATEGORY_ORDER_KEY_PREFIX = 'admin_project_order_cat_'
 
 export function saveProjectOrder(ids: string[]): void {
   localStorage.setItem(PROJECT_ORDER_KEY, JSON.stringify(ids))
@@ -280,6 +293,19 @@ export function saveProjectOrder(ids: string[]): void {
 export function loadProjectOrder(): string[] | null {
   try {
     const raw = localStorage.getItem(PROJECT_ORDER_KEY)
+    return raw ? (JSON.parse(raw) as string[]) : null
+  } catch {
+    return null
+  }
+}
+
+export function saveCategoryProjectOrder(category: ProjectCategory, ids: string[]): void {
+  localStorage.setItem(`${CATEGORY_ORDER_KEY_PREFIX}${category}`, JSON.stringify(ids))
+}
+
+export function loadCategoryProjectOrder(category: ProjectCategory): string[] | null {
+  try {
+    const raw = localStorage.getItem(`${CATEGORY_ORDER_KEY_PREFIX}${category}`)
     return raw ? (JSON.parse(raw) as string[]) : null
   } catch {
     return null

@@ -29,7 +29,7 @@ export const inputClass =
 export const fileInputClass =
   'mt-2 block w-full text-xs text-white/60 file:mr-4 file:border file:border-white/15 file:bg-white/5 file:px-3 file:py-1.5 file:text-[11px] file:uppercase file:tracking-[0.22em] file:text-white/80 hover:file:border-white/30'
 
-export const categoryOptions: ProjectCategory[] = ['music-videos', 'ai-works', 'commercials']
+export const categoryOptions: ProjectCategory[] = ['music-videos', 'ai-works', 'commercials', 'experiments']
 export const embedOptions: EmbedType[] = ['youtube', 'vimeo']
 
 // ── Category checkbox group ───────────────────────────────────────────────────

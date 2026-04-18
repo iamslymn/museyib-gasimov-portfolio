@@ -25,6 +25,7 @@ export function AppRoutes() {
           <Route path="/music-videos" element={<CategoryPage category="music-videos" />} />
           <Route path="/ai-works" element={<CategoryPage category="ai-works" />} />
           <Route path="/commercials" element={<CategoryPage category="commercials" />} />
+          <Route path="/experiments" element={<CategoryPage category="experiments" />} />
           <Route path="/archive" element={<Archive />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/project/:slug" element={<ProjectDetail />} />

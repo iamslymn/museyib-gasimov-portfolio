@@ -6,6 +6,7 @@ const links = [
   { to: '/music-videos', label: 'Music Videos' },
   { to: '/ai-works', label: 'AI Works' },
   { to: '/commercials', label: 'Commercials' },
+  { to: '/experiments', label: 'Experiments' },
   { to: '/archive', label: 'Archive' },
   { to: '/contact', label: 'Contact' },
 ] as const
@@ -24,10 +25,10 @@ export function Navbar() {
   return (
     <>
       <header className="fixed inset-x-0 top-0 z-50 border-b border-white/[0.06] bg-[var(--color-surface)]/85 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-6 px-5 py-5 sm:px-8 lg:px-12">
+        <div className="flex w-full items-center justify-between gap-8 pl-4 pr-5 py-5 sm:pl-6 sm:pr-8 lg:pl-10 lg:pr-12">
           <NavLink to="/" onClick={handleLinkClick} className="shrink-0">
             <motion.span
-              className="font-display text-[13px] font-medium uppercase tracking-[0.28em] text-white"
+              className="font-display text-[16px] font-medium uppercase tracking-[0.22em] text-white"
               whileHover={{ opacity: 0.85 }}
               transition={{ duration: 0.2 }}
             >

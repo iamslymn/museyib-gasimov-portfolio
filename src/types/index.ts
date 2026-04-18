@@ -1,4 +1,4 @@
-export type ProjectCategory = 'music-videos' | 'ai-works' | 'commercials'
+export type ProjectCategory = 'music-videos' | 'ai-works' | 'commercials' | 'experiments'
 
 export type EmbedType = 'youtube' | 'vimeo'
 
@@ -6,6 +6,7 @@ export const PROJECT_CATEGORY_LABEL: Record<ProjectCategory, string> = {
   'music-videos': 'Music Videos',
   'ai-works': 'AI Works',
   commercials: 'Commercials',
+  experiments: 'Experiments',
 }
 
 export interface Project {
