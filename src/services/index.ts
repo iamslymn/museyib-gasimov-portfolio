@@ -1,4 +1,4 @@
-export { createArchiveItem, deleteArchiveItem, listArchiveItems } from './archive'
+export { createArchiveItem, deleteArchiveItem, listArchiveItems, saveArchiveOrder, loadArchiveOrder } from './archive'
 export { signIn, signOut, getCurrentAdmin, DEMO_CREDENTIALS } from './auth'
 export {
   createProject,
@@ -7,6 +7,8 @@ export {
   listAllProjectsForAdmin,
   listProjects,
   listProjectsByCategory,
+  loadProjectOrder,
+  saveProjectOrder,
   toggleProjectVisibility,
   updateProject,
 } from './projects'

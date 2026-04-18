@@ -247,6 +247,21 @@ export async function deleteProject(id: string): Promise<void> {
   if (error) throw error
 }
 
+const PROJECT_ORDER_KEY = 'admin_project_order'
+
+export function saveProjectOrder(ids: string[]): void {
+  localStorage.setItem(PROJECT_ORDER_KEY, JSON.stringify(ids))
+}
+
+export function loadProjectOrder(): string[] | null {
+  try {
+    const raw = localStorage.getItem(PROJECT_ORDER_KEY)
+    return raw ? (JSON.parse(raw) as string[]) : null
+  } catch {
+    return null
+  }
+}
+
 export async function toggleProjectVisibility(id: string, isHidden: boolean): Promise<void> {
   if (!supabase) {
     const p = mockStore.find((p) => p.id === id)

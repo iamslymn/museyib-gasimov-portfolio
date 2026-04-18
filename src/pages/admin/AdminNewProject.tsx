@@ -1,3 +1,18 @@
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  rectSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -66,6 +81,53 @@ export type GalleryItem =
   | { kind: 'existing'; url: string }
   | { kind: 'new'; file: File; preview: string }
 
+function getGalleryItemId(item: GalleryItem) {
+  return item.kind === 'existing' ? item.url : item.preview
+}
+
+type SortableGalleryItemProps = {
+  item: GalleryItem
+  index: number
+  onRemove: (index: number) => void
+}
+
+function SortableGalleryItem({ item, index, onRemove }: SortableGalleryItemProps) {
+  const itemId = getGalleryItemId(item)
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: itemId,
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.45 : 1,
+        zIndex: isDragging ? 50 : undefined,
+      }}
+      {...attributes}
+      {...listeners}
+      className="group relative aspect-[4/3] cursor-grab touch-none overflow-hidden bg-black active:cursor-grabbing"
+    >
+      <img
+        src={itemId}
+        alt=""
+        className="pointer-events-none h-full w-full object-cover"
+      />
+      <button
+        type="button"
+        onClick={() => onRemove(index)}
+        aria-label="Remove image"
+        onPointerDown={(e) => e.stopPropagation()}
+        className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center bg-black/70 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100"
+      >
+        ×
+      </button>
+    </div>
+  )
+}
+
 type GalleryEditorProps = {
   items: GalleryItem[]
   onChange: (items: GalleryItem[]) => void
@@ -73,6 +135,10 @@ type GalleryEditorProps = {
 
 export function GalleryEditor({ items, onChange }: GalleryEditorProps) {
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+  )
 
   const handleAdd = (e: ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files ? Array.from(e.target.files) : []
@@ -95,6 +161,14 @@ export function GalleryEditor({ items, onChange }: GalleryEditorProps) {
     [items, onChange],
   )
 
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = items.findIndex((item) => getGalleryItemId(item) === active.id)
+    const newIndex = items.findIndex((item) => getGalleryItemId(item) === over.id)
+    onChange(arrayMove(items, oldIndex, newIndex))
+  }
+
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
@@ -106,24 +180,20 @@ export function GalleryEditor({ items, onChange }: GalleryEditorProps) {
       </div>
 
       {items.length ? (
-        <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4">
-          {items.map((item, i) => (
-            <div
-              key={item.kind === 'existing' ? item.url : item.preview}
-              className="group relative aspect-[4/3] overflow-hidden bg-black"
-            >
-              <img src={item.kind === 'existing' ? item.url : item.preview} alt="" className="h-full w-full object-cover" />
-              <button
-                type="button"
-                onClick={() => handleRemove(i)}
-                aria-label="Remove image"
-                className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center bg-black/70 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100"
-              >
-                ×
-              </button>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={items.map(getGalleryItemId)} strategy={rectSortingStrategy}>
+            <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4">
+              {items.map((item, i) => (
+                <SortableGalleryItem
+                  key={getGalleryItemId(item)}
+                  item={item}
+                  index={i}
+                  onRemove={handleRemove}
+                />
+              ))}
             </div>
-          ))}
-        </div>
+          </SortableContext>
+        </DndContext>
       ) : (
         <p className="text-[11px] text-white/30">No images added yet.</p>
       )}

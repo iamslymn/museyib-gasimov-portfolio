@@ -58,6 +58,21 @@ export async function createArchiveItem(input: NewArchiveItemInput): Promise<Arc
   return mapRow(data as DbArchiveItem)
 }
 
+const ARCHIVE_ORDER_KEY = 'admin_archive_order'
+
+export function saveArchiveOrder(ids: string[]): void {
+  localStorage.setItem(ARCHIVE_ORDER_KEY, JSON.stringify(ids))
+}
+
+export function loadArchiveOrder(): string[] | null {
+  try {
+    const raw = localStorage.getItem(ARCHIVE_ORDER_KEY)
+    return raw ? (JSON.parse(raw) as string[]) : null
+  } catch {
+    return null
+  }
+}
+
 export async function deleteArchiveItem(id: string): Promise<void> {
   if (!supabase) {
     const idx = mockStore.findIndex((i) => i.id === id)
