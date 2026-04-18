@@ -32,6 +32,7 @@ export function AdminEditProject() {
   const [year, setYear] = useState('')
   const [description, setDescription] = useState('')
   const [isHidden, setIsHidden] = useState(false)
+  const [isFeatured, setIsFeatured] = useState(false)
   const [thumbnail, setThumbnail] = useState<File | null>(null)
   const [galleryItems, setGalleryItems] = useState<GalleryItem[]>([])
   const [submitting, setSubmitting] = useState(false)
@@ -53,6 +54,7 @@ export function AdminEditProject() {
       setYear(found.year ?? '')
       setDescription(found.description ?? '')
       setIsHidden(found.isHidden)
+      setIsFeatured(found.isFeatured)
       setGalleryItems(found.galleryImages.map((url) => ({ kind: 'existing' as const, url })))
     })
   }, [id])
@@ -99,6 +101,7 @@ export function AdminEditProject() {
         description: description.trim() || undefined,
         year: year.trim() || undefined,
         isHidden,
+        isFeatured,
       })
       navigate('/admin')
     } catch (err) {
@@ -193,10 +196,18 @@ export function AdminEditProject() {
 
         <GalleryEditor items={galleryItems} onChange={setGalleryItems} />
 
-        <label className="flex cursor-pointer items-center gap-3">
-          <input type="checkbox" checked={isHidden} onChange={(e) => setIsHidden(e.target.checked)} className="h-4 w-4 accent-white" />
-          <span className="text-[11px] uppercase tracking-[0.22em] text-white/60">Hide from public site</span>
-        </label>
+        <div className="space-y-3">
+          <label className="flex cursor-pointer items-center gap-3">
+            <input type="checkbox" checked={isFeatured} onChange={(e) => setIsFeatured(e.target.checked)} className="h-4 w-4 accent-white" />
+            <span className="text-[11px] uppercase tracking-[0.22em] text-white/60">
+              Featured on homepage
+            </span>
+          </label>
+          <label className="flex cursor-pointer items-center gap-3">
+            <input type="checkbox" checked={isHidden} onChange={(e) => setIsHidden(e.target.checked)} className="h-4 w-4 accent-white" />
+            <span className="text-[11px] uppercase tracking-[0.22em] text-white/60">Hide from public site</span>
+          </label>
+        </div>
 
         {error ? <p className="text-xs text-red-400/90" role="alert">{error}</p> : null}
 

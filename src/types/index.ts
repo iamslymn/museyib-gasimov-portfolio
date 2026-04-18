@@ -20,6 +20,10 @@ export interface Project {
   embedUrl: string
   galleryImages: string[]
   isHidden: boolean
+  /** Whether this project appears on the homepage. Not shown in public navbar. */
+  isFeatured: boolean
+  /** Sort position within the featured homepage list. null = unordered. */
+  featuredOrder: number | null
   description?: string
   year?: string
   createdAt?: string
@@ -51,6 +55,7 @@ export interface NewProjectInput {
   description?: string
   year?: string
   isHidden?: boolean
+  isFeatured?: boolean
 }
 
 export interface EditProjectInput {
@@ -67,6 +72,7 @@ export interface EditProjectInput {
   description?: string
   year?: string
   isHidden: boolean
+  isFeatured: boolean
 }
 
 export interface NewArchiveItemInput {

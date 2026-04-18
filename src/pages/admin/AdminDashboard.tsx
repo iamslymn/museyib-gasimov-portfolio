@@ -26,9 +26,13 @@ import {
   deleteProject,
   loadArchiveOrder,
   loadCategoryProjectOrder,
+  loadFeaturedOrder,
+  reorderFeatured,
   reorderProjects,
-  saveCategoryProjectOrder,
   saveArchiveOrder,
+  saveCategoryProjectOrder,
+  saveFeaturedOrder,
+  toggleProjectFeatured,
   toggleProjectVisibility,
 } from '@/services'
 import type { ArchiveItem, Project, ProjectCategory } from '@/types'
@@ -58,11 +62,21 @@ type SortableProjectCardProps = {
   p: Project
   deletingId: string | null
   togglingId: string | null
+  featureTogglingId: string | null
   onDelete: (id: string) => void
   onToggle: (id: string, hidden: boolean) => void
+  onFeatureToggle: (id: string, currentlyFeatured: boolean) => void
 }
 
-function SortableProjectCard({ p, deletingId, togglingId, onDelete, onToggle }: SortableProjectCardProps) {
+function SortableProjectCard({
+  p,
+  deletingId,
+  togglingId,
+  featureTogglingId,
+  onDelete,
+  onToggle,
+  onFeatureToggle,
+}: SortableProjectCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: p.id,
   })
@@ -78,7 +92,7 @@ function SortableProjectCard({ p, deletingId, togglingId, onDelete, onToggle }: 
       }}
       className={`border bg-white/[0.02] p-3 ${p.isHidden ? 'border-white/5 opacity-50' : 'border-white/10'}`}
     >
-      {/* Drag handle bar */}
+      {/* Drag handle */}
       <div
         {...attributes}
         {...listeners}
@@ -98,6 +112,11 @@ function SortableProjectCard({ p, deletingId, togglingId, onDelete, onToggle }: 
             <span className="text-[10px] uppercase tracking-[0.24em] text-white/60">Hidden</span>
           </div>
         ) : null}
+        {p.isFeatured ? (
+          <div className="absolute right-1.5 top-1.5 bg-amber-400/20 px-1.5 py-0.5">
+            <span className="text-[9px] uppercase tracking-[0.2em] text-amber-400">★ Featured</span>
+          </div>
+        ) : null}
       </div>
 
       <div className="mt-2.5 flex items-start justify-between gap-2">
@@ -110,6 +129,19 @@ function SortableProjectCard({ p, deletingId, togglingId, onDelete, onToggle }: 
         </div>
 
         <div className="flex shrink-0 items-center gap-2.5">
+          <button
+            type="button"
+            disabled={featureTogglingId === p.id}
+            onClick={() => onFeatureToggle(p.id, p.isFeatured)}
+            title={p.isFeatured ? 'Remove from homepage' : 'Feature on homepage'}
+            className={`${btnBase} ${
+              p.isFeatured
+                ? 'text-amber-400/80 hover:text-amber-400'
+                : 'text-white/30 hover:text-white/70'
+            }`}
+          >
+            {p.isFeatured ? '★' : '☆'}
+          </button>
           <Link to={`/admin/projects/${p.id}/edit`} className={btnMuted}>
             Edit
           </Link>
@@ -189,29 +221,40 @@ export function AdminDashboard() {
 
   const [deletingProjectId, setDeletingProjectId] = useState<string | null>(null)
   const [togglingProjectId, setTogglingProjectId] = useState<string | null>(null)
+  const [featureTogglingId, setFeatureTogglingId] = useState<string | null>(null)
   const [deletingArchiveId, setDeletingArchiveId] = useState<string | null>(null)
   const [archiveUploading, setArchiveUploading] = useState(false)
+
+  // Category ordering state
+  const [catOrders, setCatOrders] = useState<Partial<Record<ProjectCategory, string[]>>>({})
+  const [projectsReordered, setProjectsReordered] = useState(false)
   const [savingOrder, setSavingOrder] = useState(false)
   const [orderSaved, setOrderSaved] = useState(false)
   const [orderSaveError, setOrderSaveError] = useState<string | null>(null)
-  const [projectsReordered, setProjectsReordered] = useState(false)
 
-  // Per-category sort orders (keyed by category slug)
-  const [catOrders, setCatOrders] = useState<Partial<Record<ProjectCategory, string[]>>>({})
+  // Featured ordering state (independent from category ordering)
+  const [featuredOrder, setFeaturedOrder] = useState<string[]>([])
+  const [featuredReordered, setFeaturedReordered] = useState(false)
+  const [savingFeaturedOrder, setSavingFeaturedOrder] = useState(false)
+  const [featuredOrderSaved, setFeaturedOrderSaved] = useState(false)
 
-  // Load per-category orders from localStorage once projects are ready
-  const catOrderApplied = useRef(false)
+  const orderApplied = useRef(false)
   const archiveOrderApplied = useRef(false)
 
+  // Load all saved orders from localStorage once projects are available
   useEffect(() => {
-    if (!projectsLoading && !catOrderApplied.current) {
-      catOrderApplied.current = true
+    if (!projectsLoading && !orderApplied.current) {
+      orderApplied.current = true
+
       const loaded: Partial<Record<ProjectCategory, string[]>> = {}
       for (const cat of ALL_CATEGORIES) {
         const order = loadCategoryProjectOrder(cat)
         if (order && order.length > 0) loaded[cat] = order
       }
       setCatOrders(loaded)
+
+      const fo = loadFeaturedOrder()
+      if (fo && fo.length > 0) setFeaturedOrder(fo)
     }
   }, [projectsLoading])
 
@@ -235,7 +278,19 @@ export function AdminDashboard() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
-  // Returns the display-sorted list of projects for a given category
+  // ── Featured derived list ────────────────────────────────────────────────────
+
+  const featuredProjects = useMemo(() => {
+    const featured = projects.filter((p) => p.isFeatured)
+    if (featuredOrder.length === 0) return featured
+    const map = new Map(featured.map((p) => [p.id, p]))
+    const sorted = featuredOrder.map((id) => map.get(id)).filter((p): p is Project => !!p)
+    const rest = featured.filter((p) => !featuredOrder.includes(p.id))
+    return [...sorted, ...rest]
+  }, [projects, featuredOrder])
+
+  // ── Category derived lists ───────────────────────────────────────────────────
+
   const getCategoryProjects = useCallback(
     (cat: ProjectCategory): Project[] => {
       const catProjects = projects.filter((p) => p.categories.includes(cat))
@@ -249,7 +304,6 @@ export function AdminDashboard() {
     [projects, catOrders],
   )
 
-  // Memoize category lists so renders are stable
   const projectsByCategory = useMemo(
     () =>
       ALL_CATEGORIES.reduce(
@@ -262,7 +316,41 @@ export function AdminDashboard() {
     [getCategoryProjects],
   )
 
-  // Build a drag-end handler for a specific category
+  // ── Featured drag-and-drop ───────────────────────────────────────────────────
+
+  const handleFeaturedDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event
+      if (!over || active.id === over.id) return
+
+      const oldIndex = featuredProjects.findIndex((p) => p.id === active.id)
+      const newIndex = featuredProjects.findIndex((p) => p.id === over.id)
+      if (oldIndex === -1 || newIndex === -1) return
+
+      const reordered = arrayMove(featuredProjects, oldIndex, newIndex)
+      const newIds = reordered.map((p) => p.id)
+
+      saveFeaturedOrder(newIds)
+      setFeaturedOrder(newIds)
+      setFeaturedReordered(true)
+      setFeaturedOrderSaved(false)
+    },
+    [featuredProjects],
+  )
+
+  const handleSaveFeaturedOrder = async () => {
+    setSavingFeaturedOrder(true)
+    try {
+      await reorderFeatured(featuredProjects.map((p) => p.id))
+      setFeaturedOrderSaved(true)
+      setFeaturedReordered(false)
+    } finally {
+      setSavingFeaturedOrder(false)
+    }
+  }
+
+  // ── Category drag-and-drop ───────────────────────────────────────────────────
+
   const makeCategoryDragEnd = useCallback(
     (cat: ProjectCategory) => (event: DragEndEvent) => {
       const { active, over } = event
@@ -288,7 +376,6 @@ export function AdminDashboard() {
     setSavingOrder(true)
     setOrderSaveError(null)
     try {
-      // Persist global order to Supabase (best-effort), per-category order already in localStorage
       await reorderProjects(projects.map((p) => p.id))
       setOrderSaved(true)
       setProjectsReordered(false)
@@ -298,6 +385,8 @@ export function AdminDashboard() {
       setSavingOrder(false)
     }
   }
+
+  // ── Archive drag-and-drop ────────────────────────────────────────────────────
 
   const handleArchiveDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
@@ -311,12 +400,15 @@ export function AdminDashboard() {
     })
   }
 
+  // ── Project actions ──────────────────────────────────────────────────────────
+
   const handleDeleteProject = async (id: string) => {
     if (!window.confirm('Delete this project? This cannot be undone.')) return
     setDeletingProjectId(id)
     try {
       await deleteProject(id)
       setProjects((prev) => prev.filter((p) => p.id !== id))
+      setFeaturedOrder((prev) => prev.filter((fid) => fid !== id))
     } finally {
       setDeletingProjectId(null)
     }
@@ -331,6 +423,26 @@ export function AdminDashboard() {
       setTogglingProjectId(null)
     }
   }
+
+  const handleToggleFeatured = async (id: string, currentlyFeatured: boolean) => {
+    setFeatureTogglingId(id)
+    try {
+      await toggleProjectFeatured(id, !currentlyFeatured)
+      setProjects((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, isFeatured: !currentlyFeatured } : p)),
+      )
+      if (!currentlyFeatured) {
+        // Add to end of featured order
+        setFeaturedOrder((prev) => [...prev.filter((fid) => fid !== id), id])
+      } else {
+        setFeaturedOrder((prev) => prev.filter((fid) => fid !== id))
+      }
+    } finally {
+      setFeatureTogglingId(null)
+    }
+  }
+
+  // ── Archive actions ──────────────────────────────────────────────────────────
 
   const handleDeleteArchive = async (id: string) => {
     setDeletingArchiveId(id)
@@ -354,6 +466,19 @@ export function AdminDashboard() {
       e.target.value = ''
     }
   }
+
+  // ── Shared card props factory ────────────────────────────────────────────────
+
+  const sharedCardProps = {
+    deletingId: deletingProjectId,
+    togglingId: togglingProjectId,
+    featureTogglingId,
+    onDelete: handleDeleteProject,
+    onToggle: handleToggleHidden,
+    onFeatureToggle: handleToggleFeatured,
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-16">
@@ -394,6 +519,54 @@ export function AdminDashboard() {
           <p className="text-[11px] uppercase tracking-[0.22em] text-white/30">Loading…</p>
         ) : (
           <div className="space-y-10">
+
+            {/* ── Featured / Homepage ── */}
+            <div>
+              <div className="mb-3 flex items-center justify-between border-b border-amber-400/[0.12] pb-2">
+                <h3 className="text-[10px] uppercase tracking-[0.28em] text-amber-400/70">
+                  ★ Featured · Homepage
+                  <span className="ml-2 text-amber-400/40">({featuredProjects.length})</span>
+                </h3>
+                {(featuredReordered || featuredOrderSaved) ? (
+                  <button
+                    type="button"
+                    disabled={savingFeaturedOrder || featuredOrderSaved}
+                    onClick={handleSaveFeaturedOrder}
+                    className={`px-3 py-1 text-[10px] uppercase tracking-[0.22em] transition-colors ${
+                      featuredOrderSaved
+                        ? 'text-amber-400/30 cursor-default'
+                        : 'border border-amber-400/30 text-amber-400/70 hover:border-amber-400/60 hover:text-amber-400 disabled:opacity-50'
+                    }`}
+                  >
+                    {savingFeaturedOrder ? 'Saving…' : featuredOrderSaved ? '✓ Saved' : 'Save order'}
+                  </button>
+                ) : null}
+              </div>
+
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleFeaturedDragEnd}
+              >
+                <SortableContext
+                  items={featuredProjects.map((p) => p.id)}
+                  strategy={rectSortingStrategy}
+                >
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {featuredProjects.map((p) => (
+                      <SortableProjectCard key={p.id} p={p} {...sharedCardProps} />
+                    ))}
+                    {featuredProjects.length === 0 ? (
+                      <p className="col-span-full py-4 text-[11px] text-white/25">
+                        No featured projects yet. Click ☆ on any project below to feature it on the homepage.
+                      </p>
+                    ) : null}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            </div>
+
+            {/* ── Per-category sections ── */}
             {ALL_CATEGORIES.map((cat) => {
               const catProjects = projectsByCategory[cat]
               return (
@@ -414,17 +587,10 @@ export function AdminDashboard() {
                     >
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                         {catProjects.map((p) => (
-                          <SortableProjectCard
-                            key={p.id}
-                            p={p}
-                            deletingId={deletingProjectId}
-                            togglingId={togglingProjectId}
-                            onDelete={handleDeleteProject}
-                            onToggle={handleToggleHidden}
-                          />
+                          <SortableProjectCard key={p.id} p={p} {...sharedCardProps} />
                         ))}
                         {catProjects.length === 0 ? (
-                          <p className="col-span-full text-[11px] text-white/25 py-4">
+                          <p className="col-span-full py-4 text-[11px] text-white/25">
                             No projects in this category yet.
                           </p>
                         ) : null}
@@ -448,7 +614,7 @@ export function AdminDashboard() {
             <details className="text-xs text-white/40">
               <summary className="cursor-pointer hover:text-white/60">Need the sort_order column?</summary>
               <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all rounded bg-black/60 p-3 text-[11px] text-white/60">
-                {`ALTER TABLE projects ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0;\nUPDATE projects p SET sort_order = sub.rn - 1 FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY created_at DESC) rn FROM projects) sub WHERE p.id = sub.id;`}
+                {`ALTER TABLE projects ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0;\nALTER TABLE projects ADD COLUMN IF NOT EXISTS is_featured boolean NOT NULL DEFAULT false;\nALTER TABLE projects ADD COLUMN IF NOT EXISTS featured_order integer;`}
               </pre>
             </details>
           </div>

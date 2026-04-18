@@ -20,6 +20,8 @@ export const projects: Project[] = [
     description: 'Night-led performance piece with sculptural lighting and long, patient takes.',
     year: '2025',
     isHidden: false,
+    isFeatured: true,
+    featuredOrder: 0,
   },
   {
     id: 'p2',
@@ -40,6 +42,8 @@ export const projects: Project[] = [
     description: 'Minimal set, reflective surfaces, and a restrained color palette.',
     year: '2024',
     isHidden: false,
+    isFeatured: true,
+    featuredOrder: 1,
   },
   {
     id: 'p3',
@@ -60,6 +64,8 @@ export const projects: Project[] = [
     description: 'Generative environments blended with live-action plates.',
     year: '2025',
     isHidden: false,
+    isFeatured: true,
+    featuredOrder: 2,
   },
   {
     id: 'p4',
@@ -79,6 +85,8 @@ export const projects: Project[] = [
     ],
     year: '2024',
     isHidden: false,
+    isFeatured: true,
+    featuredOrder: 3,
   },
   {
     id: 'p5',
@@ -99,6 +107,8 @@ export const projects: Project[] = [
     description: 'Automotive launch film emphasizing form, motion, and silence.',
     year: '2025',
     isHidden: false,
+    isFeatured: false,
+    featuredOrder: null,
   },
   {
     id: 'p6',
@@ -118,6 +128,8 @@ export const projects: Project[] = [
     ],
     year: '2023',
     isHidden: false,
+    isFeatured: false,
+    featuredOrder: null,
   },
   {
     id: 'p7',
@@ -137,6 +149,8 @@ export const projects: Project[] = [
     ],
     year: '2024',
     isHidden: false,
+    isFeatured: false,
+    featuredOrder: null,
   },
   {
     id: 'p8',
@@ -157,5 +171,7 @@ export const projects: Project[] = [
     description: 'Abstract narrative built from temporal drift and color separation.',
     year: '2023',
     isHidden: false,
+    isFeatured: false,
+    featuredOrder: null,
   },
 ]

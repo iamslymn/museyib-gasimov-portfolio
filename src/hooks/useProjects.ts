@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { listAllProjectsForAdmin, listProjects, listProjectsByCategory } from '@/services'
+import {
+  listAllProjectsForAdmin,
+  listFeaturedProjects,
+  listProjects,
+  listProjectsByCategory,
+} from '@/services'
 import type { Project, ProjectCategory } from '@/types'
 
 type UseProjectsOptions = {
   category?: ProjectCategory
   /** Set true in admin pages to include hidden projects. */
   includeHidden?: boolean
+  /** Set true to fetch only featured (homepage) projects. */
+  featured?: boolean
 }
 
 export function useProjects(categoryOrOpts?: ProjectCategory | UseProjectsOptions) {
@@ -15,39 +22,34 @@ export function useProjects(categoryOrOpts?: ProjectCategory | UseProjectsOption
       ? { category: categoryOrOpts }
       : (categoryOrOpts ?? {})
 
-  const { category, includeHidden = false } = opts
+  const { category, includeHidden = false, featured = false } = opts
 
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
 
+  const buildFetcher = useCallback(() => {
+    if (includeHidden) return listAllProjectsForAdmin()
+    if (featured) return listFeaturedProjects()
+    if (category) return listProjectsByCategory(category)
+    return listProjects()
+  }, [category, includeHidden, featured])
+
   const fetchProjects = useCallback(() => {
     setLoading(true)
-    const fetcher = includeHidden
-      ? listAllProjectsForAdmin()
-      : category
-        ? listProjectsByCategory(category)
-        : listProjects()
-
-    return fetcher
+    return buildFetcher()
       .then((data) => setProjects(data))
       .catch((err: unknown) =>
         setError(err instanceof Error ? err : new Error(String(err))),
       )
       .finally(() => setLoading(false))
-  }, [category, includeHidden])
+  }, [buildFetcher])
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
 
-    const fetcher = includeHidden
-      ? listAllProjectsForAdmin()
-      : category
-        ? listProjectsByCategory(category)
-        : listProjects()
-
-    fetcher
+    buildFetcher()
       .then((data) => {
         if (!cancelled) setProjects(data)
       })
@@ -61,7 +63,7 @@ export function useProjects(categoryOrOpts?: ProjectCategory | UseProjectsOption
     return () => {
       cancelled = true
     }
-  }, [category, includeHidden])
+  }, [buildFetcher])
 
   const refresh = useCallback(() => fetchProjects(), [fetchProjects])
 

@@ -6,45 +6,35 @@ import { STORAGE_BUCKETS, supabase } from './supabase'
 
 const mockStore: Project[] = projectsSeed.map((p) => ({ ...p }))
 
-/** Apply saved localStorage order on top of a fetched list. */
-function applyClientOrder(projects: Project[]): Project[] {
-  const saved = loadProjectOrder()
-  if (!saved || saved.length === 0) return projects
+// ── Ordering helpers ──────────────────────────────────────────────────────────
+
+/** Apply a saved ID order to a list, leaving unmatched items at the end. */
+function applyOrder(projects: Project[], order: string[] | null): Project[] {
+  if (!order || order.length === 0) return projects
   const map = new Map(projects.map((p) => [p.id, p]))
-  const ordered = saved.map((id) => map.get(id)).filter((p): p is Project => !!p)
-  const rest = projects.filter((p) => !saved.includes(p.id))
+  const ordered = order.map((id) => map.get(id)).filter((p): p is Project => !!p)
+  const rest = projects.filter((p) => !order.includes(p.id))
   return [...ordered, ...rest]
 }
 
-/**
- * Run a Supabase projects query ordered by sort_order first.
- * Falls back to created_at desc if sort_order column does not exist yet.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function queryProjects(apply: (q: any) => any): Promise<Project[]> {
-  const base = () =>
-    apply(supabase!.from('projects').select('*, project_images(image_url, sort_order)'))
-
-  const { data, error } = await base().order('sort_order', { ascending: true, nullsFirst: false })
-
-  if (!error) return applyClientOrder((data as DbProject[]).map(mapRow))
-
-  // Column likely does not exist yet — fall back to created_at
-  const { data: d2, error: e2 } = await base().order('created_at', { ascending: false })
-  if (e2) throw e2
-  return applyClientOrder((d2 as DbProject[]).map(mapRow))
+/** Apply the global localStorage order on top of a fetched list. */
+function applyClientOrder(projects: Project[]): Project[] {
+  return applyOrder(projects, loadProjectOrder())
 }
+
+// ── Supabase query helpers ────────────────────────────────────────────────────
 
 type DbProject = {
   id: string
   title: string
   slug: string
-  /** Stored as text[] in Supabase. */
   categories: string[]
   embed_type: string
   embed_url: string
   thumbnail_url: string
   is_hidden: boolean
+  is_featured: boolean
+  featured_order: number | null
   description: string | null
   year: string | null
   sort_order: number
@@ -62,6 +52,8 @@ function mapRow(row: DbProject): Project {
     embedUrl: row.embed_url,
     thumbnail: row.thumbnail_url,
     isHidden: row.is_hidden ?? false,
+    isFeatured: row.is_featured ?? false,
+    featuredOrder: row.featured_order ?? null,
     galleryImages: [...(row.project_images ?? [])]
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((img) => img.image_url),
@@ -71,28 +63,34 @@ function mapRow(row: DbProject): Project {
   }
 }
 
+/**
+ * Run a Supabase projects query ordered by sort_order first.
+ * Falls back to created_at desc if sort_order column does not exist yet.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function queryProjects(apply: (q: any) => any): Promise<Project[]> {
+  const base = () =>
+    apply(supabase!.from('projects').select('*, project_images(image_url, sort_order)'))
+
+  const { data, error } = await base().order('sort_order', { ascending: true, nullsFirst: false })
+  if (!error) return applyClientOrder((data as DbProject[]).map(mapRow))
+
+  // Column likely does not exist yet — fall back to created_at
+  const { data: d2, error: e2 } = await base().order('created_at', { ascending: false })
+  if (e2) throw e2
+  return applyClientOrder((d2 as DbProject[]).map(mapRow))
+}
+
+// ── Public list functions ─────────────────────────────────────────────────────
+
 /** Public pages: excludes hidden projects. */
 export async function listProjects(): Promise<Project[]> {
   if (!supabase) {
     const saved = loadProjectOrder()
     const visible = mockStore.filter((p) => !p.isHidden)
-    if (!saved) return visible
-    const map = new Map(visible.map((p) => [p.id, p]))
-    const ordered = saved.map((id) => map.get(id)).filter((p): p is Project => !!p)
-    const rest = visible.filter((p) => !saved.includes(p.id))
-    return [...ordered, ...rest]
+    return applyOrder(visible, saved)
   }
-
   return queryProjects((q) => q.eq('is_hidden', false))
-}
-
-/** Apply a saved order (category-specific or global) to a filtered list. */
-function applyOrder(projects: Project[], order: string[] | null): Project[] {
-  if (!order || order.length === 0) return projects
-  const map = new Map(projects.map((p) => [p.id, p]))
-  const ordered = order.map((id) => map.get(id)).filter((p): p is Project => !!p)
-  const rest = projects.filter((p) => !order.includes(p.id))
-  return [...ordered, ...rest]
 }
 
 /** Public pages: filters by whether the `categories` array contains the given category. */
@@ -108,22 +106,56 @@ export async function listProjectsByCategory(category: ProjectCategory): Promise
   const projects = await queryProjects((q) =>
     q.eq('is_hidden', false).filter('categories', 'cs', `{"${category}"}`),
   )
-  // Per-category order takes precedence over the global order already applied by queryProjects
   if (catOrder && catOrder.length > 0) return applyOrder(projects, catOrder)
   return projects
+}
+
+/**
+ * Homepage: returns visible featured projects in featured_order.
+ * Falls back to all visible projects if none are marked featured.
+ */
+export async function listFeaturedProjects(): Promise<Project[]> {
+  const featuredOrder = loadFeaturedOrder()
+
+  if (!supabase) {
+    const featured = mockStore.filter((p) => !p.isHidden && p.isFeatured)
+    if (featured.length === 0) return applyOrder(mockStore.filter((p) => !p.isHidden), loadProjectOrder())
+    return applyOrder(featured, featuredOrder)
+  }
+
+  // Try ordering by featured_order column
+  const base = supabase
+    .from('projects')
+    .select('*, project_images(image_url, sort_order)')
+    .eq('is_hidden', false)
+    .eq('is_featured', true)
+
+  const { data, error } = await base.order('featured_order', { ascending: true, nullsFirst: false })
+  if (!error && data) {
+    const rows = (data as DbProject[]).map(mapRow)
+    if (rows.length === 0) return listProjects()
+    return applyOrder(rows, featuredOrder)
+  }
+
+  // featured_order column may not exist yet — fall back
+  const { data: d2, error: e2 } = await supabase
+    .from('projects')
+    .select('*, project_images(image_url, sort_order)')
+    .eq('is_hidden', false)
+    .eq('is_featured', true)
+    .order('created_at', { ascending: false })
+  if (e2) throw e2
+  const rows2 = (d2 as DbProject[]).map(mapRow)
+  if (rows2.length === 0) return listProjects()
+  return applyOrder(rows2, featuredOrder)
 }
 
 /** Admin only: all projects, including hidden. */
 export async function listAllProjectsForAdmin(): Promise<Project[]> {
   if (!supabase) {
     const saved = loadProjectOrder()
-    if (!saved) return [...mockStore]
-    const map = new Map(mockStore.map((p) => [p.id, p]))
-    const ordered = saved.map((id) => map.get(id)).filter((p): p is Project => !!p)
-    const rest = mockStore.filter((p) => !saved.includes(p.id))
-    return [...ordered, ...rest]
+    return applyOrder([...mockStore], saved)
   }
-
   return queryProjects((q) => q)
 }
 
@@ -139,6 +171,8 @@ export async function getProjectBySlug(slug: string): Promise<Project | null> {
   if (error) return null
   return mapRow(data as DbProject)
 }
+
+// ── Create / Update / Delete ──────────────────────────────────────────────────
 
 export async function createProject(input: NewProjectInput): Promise<Project> {
   const thumbnail = input.thumbnailFile
@@ -160,6 +194,8 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
       embedUrl: input.embedUrl,
       galleryImages: galleryUrls,
       isHidden: input.isHidden ?? false,
+      isFeatured: input.isFeatured ?? false,
+      featuredOrder: null,
       description: input.description,
       year: input.year,
       createdAt: new Date().toISOString(),
@@ -178,6 +214,8 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
       embed_url: input.embedUrl,
       thumbnail_url: thumbnail,
       is_hidden: input.isHidden ?? false,
+      is_featured: input.isFeatured ?? false,
+      featured_order: null,
       description: input.description ?? null,
       year: input.year ?? null,
     })
@@ -228,6 +266,7 @@ export async function updateProject(input: EditProjectInput): Promise<Project> {
       thumbnail,
       galleryImages: finalGallery,
       isHidden: input.isHidden,
+      isFeatured: input.isFeatured,
       description: input.description,
       year: input.year,
     }
@@ -245,6 +284,7 @@ export async function updateProject(input: EditProjectInput): Promise<Project> {
       embed_url: input.embedUrl,
       thumbnail_url: thumbnail,
       is_hidden: input.isHidden,
+      is_featured: input.isFeatured,
       description: input.description ?? null,
       year: input.year ?? null,
     })
@@ -283,8 +323,26 @@ export async function deleteProject(id: string): Promise<void> {
   if (error) throw error
 }
 
+// ── Featured toggle ───────────────────────────────────────────────────────────
+
+export async function toggleProjectFeatured(id: string, isFeatured: boolean): Promise<void> {
+  if (!supabase) {
+    const p = mockStore.find((p) => p.id === id)
+    if (p) {
+      p.isFeatured = isFeatured
+      if (!isFeatured) p.featuredOrder = null
+    }
+    return
+  }
+  const update: Record<string, unknown> = { is_featured: isFeatured }
+  if (!isFeatured) update.featured_order = null
+  const { error } = await supabase.from('projects').update(update).eq('id', id)
+  if (error) throw error
+}
+
+// ── Ordering: global ──────────────────────────────────────────────────────────
+
 const PROJECT_ORDER_KEY = 'admin_project_order'
-const CATEGORY_ORDER_KEY_PREFIX = 'admin_project_order_cat_'
 
 export function saveProjectOrder(ids: string[]): void {
   localStorage.setItem(PROJECT_ORDER_KEY, JSON.stringify(ids))
@@ -293,19 +351,6 @@ export function saveProjectOrder(ids: string[]): void {
 export function loadProjectOrder(): string[] | null {
   try {
     const raw = localStorage.getItem(PROJECT_ORDER_KEY)
-    return raw ? (JSON.parse(raw) as string[]) : null
-  } catch {
-    return null
-  }
-}
-
-export function saveCategoryProjectOrder(category: ProjectCategory, ids: string[]): void {
-  localStorage.setItem(`${CATEGORY_ORDER_KEY_PREFIX}${category}`, JSON.stringify(ids))
-}
-
-export function loadCategoryProjectOrder(category: ProjectCategory): string[] | null {
-  try {
-    const raw = localStorage.getItem(`${CATEGORY_ORDER_KEY_PREFIX}${category}`)
     return raw ? (JSON.parse(raw) as string[]) : null
   } catch {
     return null
@@ -324,13 +369,11 @@ export async function reorderProjects(ids: string[]): Promise<void> {
     return
   }
 
-  // Use individual updates (works with RLS policies; upsert can be blocked by INSERT policies)
   const results = await Promise.all(
     ids.map((id, index) =>
       supabase!.from('projects').update({ sort_order: index }).eq('id', id),
     ),
   )
-
   const failed = results.find((r) => r.error)
   if (failed?.error) throw failed.error
 }
@@ -343,4 +386,59 @@ export async function toggleProjectVisibility(id: string, isHidden: boolean): Pr
   }
   const { error } = await supabase.from('projects').update({ is_hidden: isHidden }).eq('id', id)
   if (error) throw error
+}
+
+// ── Ordering: per-category ────────────────────────────────────────────────────
+
+const CATEGORY_ORDER_KEY_PREFIX = 'admin_project_order_cat_'
+
+export function saveCategoryProjectOrder(category: ProjectCategory, ids: string[]): void {
+  localStorage.setItem(`${CATEGORY_ORDER_KEY_PREFIX}${category}`, JSON.stringify(ids))
+}
+
+export function loadCategoryProjectOrder(category: ProjectCategory): string[] | null {
+  try {
+    const raw = localStorage.getItem(`${CATEGORY_ORDER_KEY_PREFIX}${category}`)
+    return raw ? (JSON.parse(raw) as string[]) : null
+  } catch {
+    return null
+  }
+}
+
+// ── Ordering: featured (homepage) ─────────────────────────────────────────────
+
+const FEATURED_ORDER_KEY = 'admin_featured_order'
+
+export function saveFeaturedOrder(ids: string[]): void {
+  localStorage.setItem(FEATURED_ORDER_KEY, JSON.stringify(ids))
+}
+
+export function loadFeaturedOrder(): string[] | null {
+  try {
+    const raw = localStorage.getItem(FEATURED_ORDER_KEY)
+    return raw ? (JSON.parse(raw) as string[]) : null
+  } catch {
+    return null
+  }
+}
+
+/** Persists featured order to Supabase (featured_order column) and localStorage. */
+export async function reorderFeatured(ids: string[]): Promise<void> {
+  saveFeaturedOrder(ids)
+
+  if (!supabase) {
+    ids.forEach((id, index) => {
+      const p = mockStore.find((p) => p.id === id)
+      if (p) p.featuredOrder = index
+    })
+    return
+  }
+
+  const results = await Promise.all(
+    ids.map((id, index) =>
+      supabase!.from('projects').update({ featured_order: index }).eq('id', id),
+    ),
+  )
+  const failed = results.find((r) => r.error)
+  if (failed?.error) throw failed.error
 }
