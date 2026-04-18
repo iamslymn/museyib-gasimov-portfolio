@@ -298,20 +298,15 @@ export async function reorderProjects(ids: string[]): Promise<void> {
     return
   }
 
-  const { error } = await supabase.from('projects').upsert(
-    ids.map((id, index) => ({ id, sort_order: index })),
-    { onConflict: 'id' },
+  // Use individual updates (works with RLS policies; upsert can be blocked by INSERT policies)
+  const results = await Promise.all(
+    ids.map((id, index) =>
+      supabase!.from('projects').update({ sort_order: index }).eq('id', id),
+    ),
   )
-  if (error) {
-    if (error.message?.includes('sort_order') || error.code === '42703') {
-      throw new Error(
-        'Run this SQL in your Supabase project first:\n\n' +
-        'ALTER TABLE projects ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0;\n' +
-        'UPDATE projects p SET sort_order = sub.rn - 1 FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY created_at DESC) rn FROM projects) sub WHERE p.id = sub.id;',
-      )
-    }
-    throw error
-  }
+
+  const failed = results.find((r) => r.error)
+  if (failed?.error) throw failed.error
 }
 
 export async function toggleProjectVisibility(id: string, isHidden: boolean): Promise<void> {

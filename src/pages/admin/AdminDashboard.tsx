@@ -373,16 +373,19 @@ export function AdminDashboard() {
         </DndContext>
 
         {orderSaveError ? (
-          <div className="mt-4 border border-red-400/30 bg-red-400/5 p-4">
-            <p className="mb-2 text-[11px] uppercase tracking-[0.2em] text-red-400">
+          <div className="mt-4 border border-red-400/30 bg-red-400/5 p-4 space-y-3">
+            <p className="text-[11px] uppercase tracking-[0.2em] text-red-400">
               Could not save order to database
             </p>
-            <p className="mb-3 text-xs text-white/50">
-              Run this SQL once in your Supabase SQL editor, then try again:
-            </p>
-            <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded bg-black/60 p-3 text-[11px] text-white/70">
-              {`ALTER TABLE projects ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0;\nUPDATE projects p SET sort_order = sub.rn - 1 FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY created_at DESC) rn FROM projects) sub WHERE p.id = sub.id;`}
+            <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded bg-black/60 p-3 text-[11px] text-white/60">
+              {orderSaveError}
             </pre>
+            <details className="text-xs text-white/40">
+              <summary className="cursor-pointer hover:text-white/60">Need the sort_order column?</summary>
+              <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all rounded bg-black/60 p-3 text-[11px] text-white/60">
+                {`ALTER TABLE projects ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0;\nUPDATE projects p SET sort_order = sub.rn - 1 FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY created_at DESC) rn FROM projects) sub WHERE p.id = sub.id;`}
+              </pre>
+            </details>
           </div>
         ) : null}
       </section>
