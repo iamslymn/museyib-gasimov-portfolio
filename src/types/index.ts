@@ -82,6 +82,11 @@ export interface NewArchiveItemInput {
 
 export interface ContactInfo {
   email: string
+  phone?: string
+  instagram?: string
+  instagramUrl?: string
+  /** Optional portrait image URL displayed on the left column of the Contact page. */
+  portraitUrl?: string
   location?: string
   availabilityNote?: string
 }
