@@ -53,23 +53,25 @@ export function Navbar() {
             onClick={() => setMenuOpen((o) => !o)}
             aria-label={menuOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={menuOpen}
-            className="relative flex h-9 w-9 flex-col items-center justify-center gap-[5px] md:hidden"
+            className="relative flex h-9 w-9 items-center justify-center md:hidden"
           >
-            <motion.span
-              animate={menuOpen ? { rotate: 45, y: 7 } : { rotate: 0, y: 0 }}
-              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-              className="block h-px w-5 bg-white origin-center"
-            />
-            <motion.span
-              animate={menuOpen ? { opacity: 0, scaleX: 0 } : { opacity: 1, scaleX: 1 }}
-              transition={{ duration: 0.2 }}
-              className="block h-px w-5 bg-white"
-            />
-            <motion.span
-              animate={menuOpen ? { rotate: -45, y: -7 } : { rotate: 0, y: 0 }}
-              transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-              className="block h-px w-5 bg-white origin-center"
-            />
+            <span className="relative flex h-5 w-5 items-center justify-center">
+              <motion.span
+                animate={menuOpen ? { rotate: 45, y: 0 } : { rotate: 0, y: -5 }}
+                transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+                className="absolute block h-px w-5 bg-white origin-center"
+              />
+              <motion.span
+                animate={menuOpen ? { opacity: 0, scaleX: 0 } : { opacity: 1, scaleX: 1, y: 0 }}
+                transition={{ duration: 0.2 }}
+                className="absolute block h-px w-5 bg-white origin-center"
+              />
+              <motion.span
+                animate={menuOpen ? { rotate: -45, y: 0 } : { rotate: 0, y: 5 }}
+                transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+                className="absolute block h-px w-5 bg-white origin-center"
+              />
+            </span>
           </button>
         </div>
       </header>

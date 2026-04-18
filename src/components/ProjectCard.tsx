@@ -34,8 +34,8 @@ export function ProjectCard({ project }: ProjectCardProps) {
             className="pointer-events-none absolute inset-0 bg-black/0 transition-colors duration-500 ease-out group-hover:bg-black/60"
             aria-hidden
           />
-          <div className="pointer-events-none absolute inset-0 flex items-end p-6 sm:p-8">
-            <div className="translate-y-2 opacity-0 transition-all duration-500 ease-out group-hover:translate-y-0 group-hover:opacity-100">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
+            <div className="translate-y-2 opacity-0 transition-all duration-500 ease-out group-hover:translate-y-0 group-hover:opacity-100 text-center">
               <h2 className="font-display text-xl font-medium tracking-[-0.02em] text-white sm:text-2xl">
                 {project.title}
               </h2>
