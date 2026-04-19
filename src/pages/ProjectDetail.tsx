@@ -59,7 +59,7 @@ export function ProjectDetail() {
           ) : null}
         </header>
 
-        <ProjectGallery images={project.galleryImages} projectTitle={project.title} />
+        <ProjectGallery items={project.galleryMedia} projectTitle={project.title} />
       </div>
     </article>
   )

@@ -55,7 +55,18 @@ export function AdminEditProject() {
       setDescription(found.description ?? '')
       setIsHidden(found.isHidden)
       setIsFeatured(found.isFeatured)
-      setGalleryItems(found.galleryImages.map((url) => ({ kind: 'existing' as const, url })))
+      setGalleryItems(
+        found.galleryMedia.map((entry) =>
+          entry.type === 'image'
+            ? { kind: 'existing' as const, url: entry.url }
+            : {
+                kind: 'video' as const,
+                id: crypto.randomUUID(),
+                embedType: entry.embedType,
+                embedUrl: entry.embedUrl,
+              },
+        ),
+      )
     })
   }, [id])
 
@@ -79,14 +90,6 @@ export function AdminEditProject() {
 
     setSubmitting(true)
     try {
-      const galleryExistingUrls = galleryItems
-        .filter((i): i is Extract<GalleryItem, { kind: 'existing' }> => i.kind === 'existing')
-        .map((i) => i.url)
-
-      const galleryNewFiles = galleryItems
-        .filter((i): i is Extract<GalleryItem, { kind: 'new' }> => i.kind === 'new')
-        .map((i) => i.file)
-
       await updateProject({
         id: project.id,
         title: title.trim(),
@@ -96,8 +99,7 @@ export function AdminEditProject() {
         embedUrl: embedUrl.trim(),
         thumbnailFile: thumbnail,
         thumbnailExistingUrl: project.thumbnail,
-        galleryExistingUrls,
-        galleryNewFiles,
+        galleryItems,
         description: description.trim() || undefined,
         year: year.trim() || undefined,
         isHidden,

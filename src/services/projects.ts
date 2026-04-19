@@ -1,5 +1,12 @@
 import { projectsSeed } from '@/data'
-import type { EditProjectInput, NewProjectInput, Project, ProjectCategory } from '@/types'
+import type {
+  EditProjectInput,
+  GalleryMediaItem,
+  NewProjectInput,
+  Project,
+  ProjectCategory,
+  ProjectGalleryEditorItem,
+} from '@/types'
 
 import { uploadImage, uploadImages } from './storage'
 import { STORAGE_BUCKETS, supabase } from './supabase'
@@ -39,7 +46,19 @@ type DbProject = {
   year: string | null
   sort_order: number
   created_at: string
+  /** JSON array of GalleryMediaItem — optional until migration is applied. */
+  gallery_media?: GalleryMediaItem[] | null
   project_images: { image_url: string; sort_order: number }[]
+}
+
+function mapGalleryFromRow(row: DbProject): GalleryMediaItem[] {
+  const raw = row.gallery_media
+  if (Array.isArray(raw) && raw.length > 0) {
+    return raw as GalleryMediaItem[]
+  }
+  return [...(row.project_images ?? [])]
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((img) => ({ type: 'image' as const, url: img.image_url }))
 }
 
 function mapRow(row: DbProject): Project {
@@ -54,13 +73,40 @@ function mapRow(row: DbProject): Project {
     isHidden: row.is_hidden ?? false,
     isFeatured: row.is_featured ?? false,
     featuredOrder: row.featured_order ?? null,
-    galleryImages: [...(row.project_images ?? [])]
-      .sort((a, b) => a.sort_order - b.sort_order)
-      .map((img) => img.image_url),
+    galleryMedia: mapGalleryFromRow(row),
     description: row.description ?? undefined,
     year: row.year ?? undefined,
     createdAt: row.created_at,
   }
+}
+
+function collectNewGalleryFiles(items: ProjectGalleryEditorItem[]): File[] {
+  return items
+    .filter((i): i is Extract<ProjectGalleryEditorItem, { kind: 'new' }> => i.kind === 'new')
+    .map((i) => i.file)
+}
+
+/** Builds ordered gallery from editor state + uploaded URLs for each new image (in order). */
+function buildGalleryMediaFromEditor(
+  items: ProjectGalleryEditorItem[],
+  uploadedNewUrls: string[],
+): GalleryMediaItem[] {
+  let u = 0
+  const out: GalleryMediaItem[] = []
+  for (const item of items) {
+    if (item.kind === 'existing') {
+      out.push({ type: 'image', url: item.url })
+    } else if (item.kind === 'new') {
+      const url = uploadedNewUrls[u++]
+      if (url) out.push({ type: 'image', url })
+    } else {
+      const url = item.embedUrl.trim()
+      if (url) {
+        out.push({ type: 'video', embedType: item.embedType, embedUrl: url })
+      }
+    }
+  }
+  return out
 }
 
 /**
@@ -179,9 +225,15 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
     ? await uploadImage(STORAGE_BUCKETS.projectThumbnails, input.thumbnailFile)
     : ''
 
-  const galleryUrls = input.galleryFiles.length
-    ? await uploadImages(STORAGE_BUCKETS.projectGallery, input.galleryFiles)
+  const newFiles = collectNewGalleryFiles(input.galleryItems)
+  const uploadedNewUrls = newFiles.length
+    ? await uploadImages(STORAGE_BUCKETS.projectGallery, newFiles)
     : []
+
+  const galleryMedia = buildGalleryMediaFromEditor(input.galleryItems, uploadedNewUrls)
+  const imageOnlyRows = galleryMedia
+    .filter((m): m is Extract<GalleryMediaItem, { type: 'image' }> => m.type === 'image')
+    .map((m, i) => ({ image_url: m.url, sort_order: i }))
 
   if (!supabase) {
     const project: Project = {
@@ -192,7 +244,7 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
       thumbnail,
       embedType: input.embedType,
       embedUrl: input.embedUrl,
-      galleryImages: galleryUrls,
+      galleryMedia,
       isHidden: input.isHidden ?? false,
       isFeatured: input.isFeatured ?? false,
       featuredOrder: null,
@@ -218,6 +270,7 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
       featured_order: null,
       description: input.description ?? null,
       year: input.year ?? null,
+      gallery_media: galleryMedia,
     })
     .select()
     .single()
@@ -225,11 +278,12 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
   if (error) throw error
   const created = data as DbProject
 
-  if (galleryUrls.length) {
+  await supabase.from('project_images').delete().eq('project_id', created.id)
+  if (imageOnlyRows.length) {
     const { error: imgError } = await supabase.from('project_images').insert(
-      galleryUrls.map((url, i) => ({
+      imageOnlyRows.map((row, i) => ({
         project_id: created.id,
-        image_url: url,
+        image_url: row.image_url,
         sort_order: i,
       })),
     )
@@ -238,7 +292,8 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
 
   return mapRow({
     ...created,
-    project_images: galleryUrls.map((url, i) => ({ image_url: url, sort_order: i })),
+    gallery_media: galleryMedia,
+    project_images: imageOnlyRows.map((row, i) => ({ image_url: row.image_url, sort_order: i })),
   })
 }
 
@@ -247,11 +302,15 @@ export async function updateProject(input: EditProjectInput): Promise<Project> {
     ? await uploadImage(STORAGE_BUCKETS.projectThumbnails, input.thumbnailFile)
     : input.thumbnailExistingUrl
 
-  const newGalleryUrls = input.galleryNewFiles.length
-    ? await uploadImages(STORAGE_BUCKETS.projectGallery, input.galleryNewFiles)
+  const newFiles = collectNewGalleryFiles(input.galleryItems)
+  const uploadedNewUrls = newFiles.length
+    ? await uploadImages(STORAGE_BUCKETS.projectGallery, newFiles)
     : []
 
-  const finalGallery = [...input.galleryExistingUrls, ...newGalleryUrls]
+  const galleryMedia = buildGalleryMediaFromEditor(input.galleryItems, uploadedNewUrls)
+  const imageOnlyRows = galleryMedia
+    .filter((m): m is Extract<GalleryMediaItem, { type: 'image' }> => m.type === 'image')
+    .map((m, i) => ({ image_url: m.url, sort_order: i }))
 
   if (!supabase) {
     const idx = mockStore.findIndex((p) => p.id === input.id)
@@ -264,7 +323,7 @@ export async function updateProject(input: EditProjectInput): Promise<Project> {
       embedType: input.embedType,
       embedUrl: input.embedUrl,
       thumbnail,
-      galleryImages: finalGallery,
+      galleryMedia,
       isHidden: input.isHidden,
       isFeatured: input.isFeatured,
       description: input.description,
@@ -287,6 +346,7 @@ export async function updateProject(input: EditProjectInput): Promise<Project> {
       is_featured: input.isFeatured,
       description: input.description ?? null,
       year: input.year ?? null,
+      gallery_media: galleryMedia,
     })
     .eq('id', input.id)
     .select()
@@ -296,11 +356,11 @@ export async function updateProject(input: EditProjectInput): Promise<Project> {
 
   await supabase.from('project_images').delete().eq('project_id', input.id)
 
-  if (finalGallery.length) {
+  if (imageOnlyRows.length) {
     const { error: imgError } = await supabase.from('project_images').insert(
-      finalGallery.map((url, i) => ({
+      imageOnlyRows.map((row, i) => ({
         project_id: input.id,
-        image_url: url,
+        image_url: row.image_url,
         sort_order: i,
       })),
     )
@@ -309,7 +369,8 @@ export async function updateProject(input: EditProjectInput): Promise<Project> {
 
   return mapRow({
     ...(data as DbProject),
-    project_images: finalGallery.map((url, i) => ({ image_url: url, sort_order: i })),
+    gallery_media: galleryMedia,
+    project_images: imageOnlyRows.map((row, i) => ({ image_url: row.image_url, sort_order: i })),
   })
 }
 

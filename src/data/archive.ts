@@ -1,4 +1,4 @@
-import type { ArchiveItem } from '@/types'
+import { type ArchiveItem, galleryImageUrls } from '@/types'
 
 import { projects } from './projects'
 
@@ -7,7 +7,7 @@ import { projects } from './projects'
  * before Supabase is wired up. Replace with `supabase.from('archive_items').select()`.
  */
 export const archiveSeed: ArchiveItem[] = projects.flatMap((p) =>
-  p.galleryImages.slice(0, 3).map((imageUrl, index) => ({
+  galleryImageUrls(p.galleryMedia).slice(0, 3).map((imageUrl, index) => ({
     id: `${p.id}-arch-${index}`,
     imageUrl,
     title: `${p.title} — still ${index + 1}`,

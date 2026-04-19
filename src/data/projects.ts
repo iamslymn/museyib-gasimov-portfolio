@@ -1,4 +1,8 @@
-import type { Project } from '@/types'
+import type { GalleryMediaItem, Project } from '@/types'
+
+function stills(urls: string[]): GalleryMediaItem[] {
+  return urls.map((url) => ({ type: 'image' as const, url }))
+}
 
 export const projects: Project[] = [
   {
@@ -9,14 +13,14 @@ export const projects: Project[] = [
     thumbnail: 'https://picsum.photos/seed/nocturne/1600/1000',
     embedType: 'youtube',
     embedUrl: 'https://www.youtube.com/embed/LjCzPp-MK48',
-    galleryImages: [
+    galleryMedia: stills([
       'https://picsum.photos/seed/nocturne-a/1200/800',
       'https://picsum.photos/seed/nocturne-b/1200/800',
       'https://picsum.photos/seed/nocturne-c/1200/800',
       'https://picsum.photos/seed/nocturne-d/1200/800',
       'https://picsum.photos/seed/nocturne-e/1200/800',
       'https://picsum.photos/seed/nocturne-f/1200/800',
-    ],
+    ]),
     description: 'Night-led performance piece with sculptural lighting and long, patient takes.',
     year: '2025',
     isHidden: false,
@@ -31,14 +35,14 @@ export const projects: Project[] = [
     thumbnail: 'https://picsum.photos/seed/glassecho/1600/1000',
     embedType: 'vimeo',
     embedUrl: 'https://player.vimeo.com/video/76979871',
-    galleryImages: [
+    galleryMedia: stills([
       'https://picsum.photos/seed/glassecho-a/1200/800',
       'https://picsum.photos/seed/glassecho-b/1200/800',
       'https://picsum.photos/seed/glassecho-c/1200/800',
       'https://picsum.photos/seed/glassecho-d/1200/800',
       'https://picsum.photos/seed/glassecho-e/1200/800',
       'https://picsum.photos/seed/glassecho-f/1200/800',
-    ],
+    ]),
     description: 'Minimal set, reflective surfaces, and a restrained color palette.',
     year: '2024',
     isHidden: false,
@@ -53,14 +57,14 @@ export const projects: Project[] = [
     thumbnail: 'https://picsum.photos/seed/synthetic/1600/1000',
     embedType: 'youtube',
     embedUrl: 'https://www.youtube.com/embed/9bZkp7q19f0',
-    galleryImages: [
+    galleryMedia: stills([
       'https://picsum.photos/seed/synthetic-a/1200/800',
       'https://picsum.photos/seed/synthetic-b/1200/800',
       'https://picsum.photos/seed/synthetic-c/1200/800',
       'https://picsum.photos/seed/synthetic-d/1200/800',
       'https://picsum.photos/seed/synthetic-e/1200/800',
       'https://picsum.photos/seed/synthetic-f/1200/800',
-    ],
+    ]),
     description: 'Generative environments blended with live-action plates.',
     year: '2025',
     isHidden: false,
@@ -75,14 +79,14 @@ export const projects: Project[] = [
     thumbnail: 'https://picsum.photos/seed/neural/1600/1000',
     embedType: 'youtube',
     embedUrl: 'https://www.youtube.com/embed/ScMzIvxBSi4',
-    galleryImages: [
+    galleryMedia: stills([
       'https://picsum.photos/seed/neural-a/1200/800',
       'https://picsum.photos/seed/neural-b/1200/800',
       'https://picsum.photos/seed/neural-c/1200/800',
       'https://picsum.photos/seed/neural-d/1200/800',
       'https://picsum.photos/seed/neural-e/1200/800',
       'https://picsum.photos/seed/neural-f/1200/800',
-    ],
+    ]),
     year: '2024',
     isHidden: false,
     isFeatured: true,
@@ -96,14 +100,14 @@ export const projects: Project[] = [
     thumbnail: 'https://picsum.photos/seed/atlas/1600/1000',
     embedType: 'vimeo',
     embedUrl: 'https://player.vimeo.com/video/148751763',
-    galleryImages: [
+    galleryMedia: stills([
       'https://picsum.photos/seed/atlas-a/1200/800',
       'https://picsum.photos/seed/atlas-b/1200/800',
       'https://picsum.photos/seed/atlas-c/1200/800',
       'https://picsum.photos/seed/atlas-d/1200/800',
       'https://picsum.photos/seed/atlas-e/1200/800',
       'https://picsum.photos/seed/atlas-f/1200/800',
-    ],
+    ]),
     description: 'Automotive launch film emphasizing form, motion, and silence.',
     year: '2025',
     isHidden: false,
@@ -118,14 +122,14 @@ export const projects: Project[] = [
     thumbnail: 'https://picsum.photos/seed/studionorth/1600/1000',
     embedType: 'youtube',
     embedUrl: 'https://www.youtube.com/embed/uelHwf8o7_U',
-    galleryImages: [
+    galleryMedia: stills([
       'https://picsum.photos/seed/studionorth-a/1200/800',
       'https://picsum.photos/seed/studionorth-b/1200/800',
       'https://picsum.photos/seed/studionorth-c/1200/800',
       'https://picsum.photos/seed/studionorth-d/1200/800',
       'https://picsum.photos/seed/studionorth-e/1200/800',
       'https://picsum.photos/seed/studionorth-f/1200/800',
-    ],
+    ]),
     year: '2023',
     isHidden: false,
     isFeatured: false,
@@ -139,14 +143,14 @@ export const projects: Project[] = [
     thumbnail: 'https://picsum.photos/seed/velvet/1600/1000',
     embedType: 'youtube',
     embedUrl: 'https://www.youtube.com/embed/FTQbiNvZqaY',
-    galleryImages: [
+    galleryMedia: stills([
       'https://picsum.photos/seed/velvet-a/1200/800',
       'https://picsum.photos/seed/velvet-b/1200/800',
       'https://picsum.photos/seed/velvet-c/1200/800',
       'https://picsum.photos/seed/velvet-d/1200/800',
       'https://picsum.photos/seed/velvet-e/1200/800',
       'https://picsum.photos/seed/velvet-f/1200/800',
-    ],
+    ]),
     year: '2024',
     isHidden: false,
     isFeatured: false,
@@ -160,14 +164,14 @@ export const projects: Project[] = [
     thumbnail: 'https://picsum.photos/seed/chromatic/1600/1000',
     embedType: 'vimeo',
     embedUrl: 'https://player.vimeo.com/video/22439234',
-    galleryImages: [
+    galleryMedia: stills([
       'https://picsum.photos/seed/chromatic-a/1200/800',
       'https://picsum.photos/seed/chromatic-b/1200/800',
       'https://picsum.photos/seed/chromatic-c/1200/800',
       'https://picsum.photos/seed/chromatic-d/1200/800',
       'https://picsum.photos/seed/chromatic-e/1200/800',
       'https://picsum.photos/seed/chromatic-f/1200/800',
-    ],
+    ]),
     description: 'Abstract narrative built from temporal drift and color separation.',
     year: '2023',
     isHidden: false,

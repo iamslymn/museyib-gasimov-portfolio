@@ -2,6 +2,23 @@ export type ProjectCategory = 'music-videos' | 'ai-works' | 'commercials' | 'exp
 
 export type EmbedType = 'youtube' | 'vimeo'
 
+/** Ordered gallery on project detail: stills and/or extra embeds (hero embed is separate). */
+export type GalleryMediaItem =
+  | { type: 'image'; url: string }
+  | { type: 'video'; embedType: EmbedType; embedUrl: string }
+
+export function galleryImageUrls(media: GalleryMediaItem[]): string[] {
+  return media.filter((m): m is { type: 'image'; url: string } => m.type === 'image').map((m) => m.url)
+}
+
+/**
+ * Admin gallery editor row — images may be existing URLs, new file uploads, or a video embed.
+ */
+export type ProjectGalleryEditorItem =
+  | { kind: 'existing'; url: string }
+  | { kind: 'new'; file: File; preview: string }
+  | { kind: 'video'; id: string; embedType: EmbedType; embedUrl: string }
+
 export const PROJECT_CATEGORY_LABEL: Record<ProjectCategory, string> = {
   'music-videos': 'Music Videos',
   'ai-works': 'AI Works',
@@ -18,7 +35,8 @@ export interface Project {
   thumbnail: string
   embedType: EmbedType
   embedUrl: string
-  galleryImages: string[]
+  /** Hero embed + gallery stills/embeds (ordered). */
+  galleryMedia: GalleryMediaItem[]
   isHidden: boolean
   /** Whether this project appears on the homepage. Not shown in public navbar. */
   isFeatured: boolean
@@ -51,7 +69,7 @@ export interface NewProjectInput {
   embedType: EmbedType
   embedUrl: string
   thumbnailFile: File | null
-  galleryFiles: File[]
+  galleryItems: ProjectGalleryEditorItem[]
   description?: string
   year?: string
   isHidden?: boolean
@@ -67,8 +85,7 @@ export interface EditProjectInput {
   embedUrl: string
   thumbnailFile: File | null
   thumbnailExistingUrl: string
-  galleryExistingUrls: string[]
-  galleryNewFiles: File[]
+  galleryItems: ProjectGalleryEditorItem[]
   description?: string
   year?: string
   isHidden: boolean

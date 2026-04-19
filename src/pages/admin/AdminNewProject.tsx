@@ -18,7 +18,7 @@ import type { ChangeEvent, FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import { createProject } from '@/services'
-import type { EmbedType, ProjectCategory } from '@/types'
+import type { EmbedType, ProjectCategory, ProjectGalleryEditorItem } from '@/types'
 import { PROJECT_CATEGORY_LABEL } from '@/types'
 import { slugify } from '@/utils/slug'
 
@@ -77,25 +77,91 @@ export function CategoryCheckboxes({ selected, onChange }: CategoryCheckboxesPro
 }
 
 // ── Gallery editor ────────────────────────────────────────────────────────────
-export type GalleryItem =
-  | { kind: 'existing'; url: string }
-  | { kind: 'new'; file: File; preview: string }
+export type GalleryItem = ProjectGalleryEditorItem
 
 function getGalleryItemId(item: GalleryItem) {
-  return item.kind === 'existing' ? item.url : item.preview
+  if (item.kind === 'existing') return item.url
+  if (item.kind === 'new') return item.preview
+  return item.id
 }
 
 type SortableGalleryItemProps = {
   item: GalleryItem
   index: number
+  items: GalleryItem[]
   onRemove: (index: number) => void
+  onChange: (items: GalleryItem[]) => void
 }
 
-function SortableGalleryItem({ item, index, onRemove }: SortableGalleryItemProps) {
+function SortableGalleryItem({ item, index, items, onRemove, onChange }: SortableGalleryItemProps) {
   const itemId = getGalleryItemId(item)
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: itemId,
   })
+
+  if (item.kind === 'video') {
+    return (
+      <div
+        ref={setNodeRef}
+        style={{
+          transform: CSS.Transform.toString(transform),
+          transition,
+          opacity: isDragging ? 0.45 : 1,
+          zIndex: isDragging ? 50 : undefined,
+        }}
+        {...attributes}
+        className="col-span-3 sm:col-span-4"
+      >
+        <div
+          {...listeners}
+          className="cursor-grab touch-none border border-white/10 bg-black/40 p-3 active:cursor-grabbing sm:flex sm:flex-wrap sm:items-end sm:gap-3"
+        >
+          <label className="block min-w-[7rem] shrink-0 text-[10px] uppercase tracking-[0.2em] text-white/50">
+            Video
+            <select
+              value={item.embedType}
+              onChange={(e) => {
+                const next = [...items]
+                next[index] = { ...item, embedType: e.target.value as EmbedType }
+                onChange(next)
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className={`${inputClass} mt-1.5 cursor-pointer text-xs`}
+            >
+              {embedOptions.map((e) => (
+                <option key={e} value={e} className="bg-black">
+                  {e === 'youtube' ? 'YouTube' : 'Vimeo'}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="mt-3 block min-w-0 flex-1 text-[10px] uppercase tracking-[0.2em] text-white/50 sm:mt-0">
+            Link
+            <input
+              value={item.embedUrl}
+              onChange={(e) => {
+                const next = [...items]
+                next[index] = { ...item, embedUrl: e.target.value }
+                onChange(next)
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className={`${inputClass} mt-1.5 font-mono text-[11px]`}
+              placeholder="https://…"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => onRemove(index)}
+            aria-label="Remove video"
+            onPointerDown={(e) => e.stopPropagation()}
+            className="mt-3 shrink-0 self-end border border-white/15 px-2 py-1.5 text-[10px] uppercase tracking-[0.2em] text-white/50 hover:border-white/30 hover:text-white/80 sm:mt-0"
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -161,6 +227,18 @@ export function GalleryEditor({ items, onChange }: GalleryEditorProps) {
     [items, onChange],
   )
 
+  const handleAddVideo = () => {
+    onChange([
+      ...items,
+      {
+        kind: 'video',
+        id: crypto.randomUUID(),
+        embedType: 'youtube' as EmbedType,
+        embedUrl: '',
+      },
+    ])
+  }
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
@@ -171,13 +249,25 @@ export function GalleryEditor({ items, onChange }: GalleryEditorProps) {
 
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between">
-        <span className={labelClass}>Gallery images</span>
-        <label className="cursor-pointer text-[10px] uppercase tracking-[0.22em] text-white/50 hover:text-white/80">
-          + Add images
-          <input ref={inputRef} type="file" accept="image/*" multiple className="sr-only" onChange={handleAdd} />
-        </label>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <span className={labelClass}>Gallery</span>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={handleAddVideo}
+            className="text-[10px] uppercase tracking-[0.22em] text-white/50 hover:text-white/80"
+          >
+            + Add video
+          </button>
+          <label className="cursor-pointer text-[10px] uppercase tracking-[0.22em] text-white/50 hover:text-white/80">
+            + Add images
+            <input ref={inputRef} type="file" accept="image/*" multiple className="sr-only" onChange={handleAdd} />
+          </label>
+        </div>
       </div>
+      <p className="mb-3 text-[10px] normal-case tracking-normal text-white/30">
+        Stills and extra embeds appear in one grid on the project page (hero video is separate).
+      </p>
 
       {items.length ? (
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -188,14 +278,16 @@ export function GalleryEditor({ items, onChange }: GalleryEditorProps) {
                   key={getGalleryItemId(item)}
                   item={item}
                   index={i}
+                  items={items}
                   onRemove={handleRemove}
+                  onChange={onChange}
                 />
               ))}
             </div>
           </SortableContext>
         </DndContext>
       ) : (
-        <p className="text-[11px] text-white/30">No images added yet.</p>
+        <p className="text-[11px] text-white/30">No gallery items yet.</p>
       )}
     </div>
   )
@@ -239,10 +331,6 @@ export function AdminNewProject() {
 
     setSubmitting(true)
     try {
-      const galleryFiles = galleryItems
-        .filter((i): i is Extract<GalleryItem, { kind: 'new' }> => i.kind === 'new')
-        .map((i) => i.file)
-
       await createProject({
         title: title.trim(),
         slug: finalSlug,
@@ -250,7 +338,7 @@ export function AdminNewProject() {
         embedType,
         embedUrl: embedUrl.trim(),
         thumbnailFile: thumbnail,
-        galleryFiles,
+        galleryItems,
         description: description.trim() || undefined,
         year: year.trim() || undefined,
         isHidden,
