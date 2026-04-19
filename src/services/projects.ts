@@ -16,15 +16,23 @@ const mockStore: Project[] = projectsSeed.map((p) => ({ ...p }))
 /** PostgREST embed; fails if FK relationship is missing from API schema — we fall back to a separate query. */
 const PROJECT_SELECT_WITH_IMAGES = '*, project_images(image_url, sort_order)'
 
-/** Run in Supabase SQL Editor if remote DB was created before gallery_media existed (fixes PGRST204 on insert/update). */
-const SQL_ADD_GALLERY_MEDIA = `alter table if exists public.projects
-  add column if not exists gallery_media jsonb not null default '[]'::jsonb;`
+/**
+ * Run in Supabase → SQL → New query.
+ * PGRST204 often means PostgREST's cache is stale even after the column exists — the NOTIFY line fixes that.
+ */
+const SQL_FIX_GALLERY_MEDIA_PGRST204 = `alter table if exists public.projects
+  add column if not exists gallery_media jsonb not null default '[]'::jsonb;
+
+notify pgrst, 'reload schema';`
 
 function throwIfMissingGalleryMediaColumn(error: { code?: string; message?: string } | null | undefined): void {
   if (!error) return
   if (error.code === 'PGRST204' && (error.message ?? '').includes('gallery_media')) {
     throw new Error(
-      `Your Supabase database is missing the gallery_media column on projects. In Dashboard → SQL → New query, run:\n\n${SQL_ADD_GALLERY_MEDIA}\n\nThen save again. If you still see errors, wait ~30 seconds for the API schema cache to refresh.`,
+      `PostgREST cannot see the gallery_media column yet (error PGRST204). This usually means the column was not added on this project, or the API schema cache has not reloaded.\n\n` +
+        `In Supabase → SQL → New query, run:\n\n${SQL_FIX_GALLERY_MEDIA_PGRST204}\n\n` +
+        `Then try saving again. If you already added the column, running only the second line (notify pgrst) is enough. ` +
+        `As a last resort, wait 1–2 minutes or use Project Settings → pause/resume to refresh the API.`,
     )
   }
 }
