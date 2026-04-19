@@ -16,10 +16,6 @@ const mockStore: Project[] = projectsSeed.map((p) => ({ ...p }))
 /** PostgREST embed; fails if FK relationship is missing from API schema — we fall back to a separate query. */
 const PROJECT_SELECT_WITH_IMAGES = '*, project_images(image_url, sort_order)'
 
-/** Explicit columns for insert/update RETURNING — avoids bare `select=*` and invalid `*` if schema cache differs. */
-const PROJECT_RETURN_COLUMNS =
-  'id, title, slug, categories, embed_type, embed_url, thumbnail_url, is_hidden, is_featured, featured_order, description, year, sort_order, gallery_media, created_at'
-
 // ── Ordering helpers ──────────────────────────────────────────────────────────
 
 /** Apply a saved ID order to a list, leaving unmatched items at the end. */
@@ -265,6 +261,31 @@ export async function listAllProjectsForAdmin(): Promise<Project[]> {
   return queryProjects((q) => q)
 }
 
+/** Load one row by primary key (embed + fallback). Used after insert/update to avoid RETURNING column-list 400s. */
+async function fetchDbProjectById(id: string): Promise<DbProject | null> {
+  if (!supabase) return null
+
+  const embedded = await supabase
+    .from('projects')
+    .select(PROJECT_SELECT_WITH_IMAGES)
+    .eq('id', id)
+    .single()
+
+  if (!embedded.error && embedded.data) {
+    return embedded.data as DbProject
+  }
+
+  const bare = await supabase.from('projects').select('*').eq('id', id).single()
+  if (bare.error || !bare.data) return null
+
+  const row = bare.data as DbProject
+  const imgs = await fetchImagesByProjectIds([row.id])
+  return {
+    ...row,
+    project_images: imgs.get(row.id) ?? [],
+  }
+}
+
 export async function getProjectBySlug(slug: string): Promise<Project | null> {
   if (!supabase) return mockStore.find((p) => p.slug === slug) ?? null
 
@@ -327,7 +348,7 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
     return project
   }
 
-  const { data, error } = await supabase
+  const { data: inserted, error } = await supabase
     .from('projects')
     .insert({
       title: input.title,
@@ -343,11 +364,12 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
       year: input.year ?? null,
       gallery_media: galleryMedia,
     })
-    .select(PROJECT_RETURN_COLUMNS)
+    .select('id')
     .single()
 
   if (error) throw error
-  const created = data as DbProject
+  const created = await fetchDbProjectById(inserted.id)
+  if (!created) throw new Error('Project was created but could not be loaded. Check Supabase policies and schema.')
 
   await supabase.from('project_images').delete().eq('project_id', created.id)
   if (imageOnlyRows.length) {
@@ -404,7 +426,7 @@ export async function updateProject(input: EditProjectInput): Promise<Project> {
     return updated
   }
 
-  const { data, error } = await supabase
+  const { error: updateErr } = await supabase
     .from('projects')
     .update({
       title: input.title,
@@ -420,10 +442,11 @@ export async function updateProject(input: EditProjectInput): Promise<Project> {
       gallery_media: galleryMedia,
     })
     .eq('id', input.id)
-    .select(PROJECT_RETURN_COLUMNS)
-    .single()
 
-  if (error) throw error
+  if (updateErr) throw updateErr
+
+  const data = await fetchDbProjectById(input.id)
+  if (!data) throw new Error('Project was updated but could not be reloaded.')
 
   await supabase.from('project_images').delete().eq('project_id', input.id)
 
@@ -439,7 +462,7 @@ export async function updateProject(input: EditProjectInput): Promise<Project> {
   }
 
   return mapRow({
-    ...(data as DbProject),
+    ...data,
     gallery_media: galleryMedia,
     project_images: imageOnlyRows.map((row, i) => ({ image_url: row.image_url, sort_order: i })),
   })
