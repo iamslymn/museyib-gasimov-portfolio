@@ -16,25 +16,18 @@ const mockStore: Project[] = projectsSeed.map((p) => ({ ...p }))
 /** PostgREST embed; fails if FK relationship is missing from API schema — we fall back to a separate query. */
 const PROJECT_SELECT_WITH_IMAGES = '*, project_images(image_url, sort_order)'
 
-/**
- * Run in Supabase → SQL → New query.
- * PGRST204 often means PostgREST's cache is stale even after the column exists — the NOTIFY line fixes that.
- */
-const SQL_FIX_GALLERY_MEDIA_PGRST204 = `alter table if exists public.projects
-  add column if not exists gallery_media jsonb not null default '[]'::jsonb;
+/** When PostgREST's cache does not list gallery_media, omit it and rely on project_images + client merge (video rows in JSON only persist once the column is visible). */
+function shouldRetryWithoutGalleryMedia(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false
+  const msg = error.message ?? ''
+  return (
+    (error.code === 'PGRST204' && msg.includes('gallery_media')) ||
+    (msg.includes('gallery_media') && (msg.includes('schema cache') || msg.includes('Could not find')))
+  )
+}
 
-notify pgrst, 'reload schema';`
-
-function throwIfMissingGalleryMediaColumn(error: { code?: string; message?: string } | null | undefined): void {
-  if (!error) return
-  if (error.code === 'PGRST204' && (error.message ?? '').includes('gallery_media')) {
-    throw new Error(
-      `PostgREST cannot see the gallery_media column yet (error PGRST204). This usually means the column was not added on this project, or the API schema cache has not reloaded.\n\n` +
-        `In Supabase → SQL → New query, run:\n\n${SQL_FIX_GALLERY_MEDIA_PGRST204}\n\n` +
-        `Then try saving again. If you already added the column, running only the second line (notify pgrst) is enough. ` +
-        `As a last resort, wait 1–2 minutes or use Project Settings → pause/resume to refresh the API.`,
-    )
-  }
+function formatPostgrestError(error: { message?: string; code?: string; hint?: string }): string {
+  return [error.code, error.message, error.hint].filter(Boolean).join(' — ')
 }
 
 // ── Ordering helpers ──────────────────────────────────────────────────────────
@@ -369,27 +362,36 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
     return project
   }
 
-  const { data: inserted, error } = await supabase
+  const rowWithoutGallery = {
+    title: input.title,
+    slug: input.slug,
+    categories: input.categories,
+    embed_type: input.embedType,
+    embed_url: input.embedUrl,
+    thumbnail_url: thumbnail,
+    is_hidden: input.isHidden ?? false,
+    is_featured: input.isFeatured ?? false,
+    featured_order: null,
+    description: input.description ?? null,
+    year: input.year ?? null,
+  }
+
+  let { data: inserted, error } = await supabase
     .from('projects')
-    .insert({
-      title: input.title,
-      slug: input.slug,
-      categories: input.categories,
-      embed_type: input.embedType,
-      embed_url: input.embedUrl,
-      thumbnail_url: thumbnail,
-      is_hidden: input.isHidden ?? false,
-      is_featured: input.isFeatured ?? false,
-      featured_order: null,
-      description: input.description ?? null,
-      year: input.year ?? null,
-      gallery_media: galleryMedia,
-    })
+    .insert({ ...rowWithoutGallery, gallery_media: galleryMedia })
     .select('id')
     .single()
 
-  throwIfMissingGalleryMediaColumn(error)
-  if (error) throw error
+  if (error && shouldRetryWithoutGalleryMedia(error)) {
+    ;({ data: inserted, error } = await supabase
+      .from('projects')
+      .insert(rowWithoutGallery)
+      .select('id')
+      .single())
+  }
+
+  if (error) throw new Error(formatPostgrestError(error))
+  if (!inserted) throw new Error('Insert succeeded but returned no row id.')
   const created = await fetchDbProjectById(inserted.id)
   if (!created) throw new Error('Project was created but could not be loaded. Check Supabase policies and schema.')
 
@@ -448,25 +450,29 @@ export async function updateProject(input: EditProjectInput): Promise<Project> {
     return updated
   }
 
-  const { error: updateErr } = await supabase
+  const baseUpdate = {
+    title: input.title,
+    slug: input.slug,
+    categories: input.categories,
+    embed_type: input.embedType,
+    embed_url: input.embedUrl,
+    thumbnail_url: thumbnail,
+    is_hidden: input.isHidden,
+    is_featured: input.isFeatured,
+    description: input.description ?? null,
+    year: input.year ?? null,
+  }
+
+  let { error: updateErr } = await supabase
     .from('projects')
-    .update({
-      title: input.title,
-      slug: input.slug,
-      categories: input.categories,
-      embed_type: input.embedType,
-      embed_url: input.embedUrl,
-      thumbnail_url: thumbnail,
-      is_hidden: input.isHidden,
-      is_featured: input.isFeatured,
-      description: input.description ?? null,
-      year: input.year ?? null,
-      gallery_media: galleryMedia,
-    })
+    .update({ ...baseUpdate, gallery_media: galleryMedia })
     .eq('id', input.id)
 
-  throwIfMissingGalleryMediaColumn(updateErr)
-  if (updateErr) throw updateErr
+  if (updateErr && shouldRetryWithoutGalleryMedia(updateErr)) {
+    ;({ error: updateErr } = await supabase.from('projects').update(baseUpdate).eq('id', input.id))
+  }
+
+  if (updateErr) throw new Error(formatPostgrestError(updateErr))
 
   const data = await fetchDbProjectById(input.id)
   if (!data) throw new Error('Project was updated but could not be reloaded.')
