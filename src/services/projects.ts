@@ -16,6 +16,19 @@ const mockStore: Project[] = projectsSeed.map((p) => ({ ...p }))
 /** PostgREST embed; fails if FK relationship is missing from API schema — we fall back to a separate query. */
 const PROJECT_SELECT_WITH_IMAGES = '*, project_images(image_url, sort_order)'
 
+/** Run in Supabase SQL Editor if remote DB was created before gallery_media existed (fixes PGRST204 on insert/update). */
+const SQL_ADD_GALLERY_MEDIA = `alter table if exists public.projects
+  add column if not exists gallery_media jsonb not null default '[]'::jsonb;`
+
+function throwIfMissingGalleryMediaColumn(error: { code?: string; message?: string } | null | undefined): void {
+  if (!error) return
+  if (error.code === 'PGRST204' && (error.message ?? '').includes('gallery_media')) {
+    throw new Error(
+      `Your Supabase database is missing the gallery_media column on projects. In Dashboard → SQL → New query, run:\n\n${SQL_ADD_GALLERY_MEDIA}\n\nThen save again. If you still see errors, wait ~30 seconds for the API schema cache to refresh.`,
+    )
+  }
+}
+
 // ── Ordering helpers ──────────────────────────────────────────────────────────
 
 /** Apply a saved ID order to a list, leaving unmatched items at the end. */
@@ -367,6 +380,7 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
     .select('id')
     .single()
 
+  throwIfMissingGalleryMediaColumn(error)
   if (error) throw error
   const created = await fetchDbProjectById(inserted.id)
   if (!created) throw new Error('Project was created but could not be loaded. Check Supabase policies and schema.')
@@ -443,6 +457,7 @@ export async function updateProject(input: EditProjectInput): Promise<Project> {
     })
     .eq('id', input.id)
 
+  throwIfMissingGalleryMediaColumn(updateErr)
   if (updateErr) throw updateErr
 
   const data = await fetchDbProjectById(input.id)
