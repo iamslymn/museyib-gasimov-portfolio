@@ -16,6 +16,10 @@ const mockStore: Project[] = projectsSeed.map((p) => ({ ...p }))
 /** PostgREST embed; fails if FK relationship is missing from API schema — we fall back to a separate query. */
 const PROJECT_SELECT_WITH_IMAGES = '*, project_images(image_url, sort_order)'
 
+/** Explicit columns for insert/update RETURNING — avoids bare `select=*` and invalid `*` if schema cache differs. */
+const PROJECT_RETURN_COLUMNS =
+  'id, title, slug, categories, embed_type, embed_url, thumbnail_url, is_hidden, is_featured, featured_order, description, year, sort_order, gallery_media, created_at'
+
 // ── Ordering helpers ──────────────────────────────────────────────────────────
 
 /** Apply a saved ID order to a list, leaving unmatched items at the end. */
@@ -158,7 +162,8 @@ async function queryProjects(apply: (q: any) => any): Promise<Project[]> {
   const fetchRows = async (selectClause: string): Promise<DbProject[]> => {
     const base = () => apply(supabase!.from('projects').select(selectClause))
 
-    const { data, error } = await base().order('sort_order', { ascending: true, nullsFirst: false })
+    // Do not pass nullsFirst — PostgREST appends .nullslast/.nullsfirst to `order`, which some deployments reject with 400.
+    const { data, error } = await base().order('sort_order', { ascending: true })
     if (!error && data) return data as DbProject[]
 
     const { data: d2, error: e2 } = await base().order('created_at', { ascending: false })
@@ -198,8 +203,12 @@ export async function listProjectsByCategory(category: ProjectCategory): Promise
     return applyOrder(visible, catOrder ?? globalOrder)
   }
 
+  // `.contains([x])` builds `cs.{x}` without quotes — invalid for hyphenated text[] values; use explicit array literal.
+  const categoriesLiteral = `{${[category]
+    .map((c) => `"${String(c).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`)
+    .join(',')}}`
   const projects = await queryProjects((q) =>
-    q.eq('is_hidden', false).contains('categories', [category]),
+    q.eq('is_hidden', false).filter('categories', 'cs', categoriesLiteral),
   )
   if (catOrder && catOrder.length > 0) return applyOrder(projects, catOrder)
   return projects
@@ -226,7 +235,7 @@ export async function listFeaturedProjects(): Promise<Project[]> {
         .eq('is_hidden', false)
         .eq('is_featured', true)
 
-    const { data, error } = await mk().order('featured_order', { ascending: true, nullsFirst: false })
+    const { data, error } = await mk().order('featured_order', { ascending: true })
     if (!error && data) return data as unknown as DbProject[]
 
     const { data: d2, error: e2 } = await mk().order('created_at', { ascending: false })
@@ -334,7 +343,7 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
       year: input.year ?? null,
       gallery_media: galleryMedia,
     })
-    .select()
+    .select(PROJECT_RETURN_COLUMNS)
     .single()
 
   if (error) throw error
@@ -411,7 +420,7 @@ export async function updateProject(input: EditProjectInput): Promise<Project> {
       gallery_media: galleryMedia,
     })
     .eq('id', input.id)
-    .select()
+    .select(PROJECT_RETURN_COLUMNS)
     .single()
 
   if (error) throw error
