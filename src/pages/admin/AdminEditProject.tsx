@@ -22,6 +22,7 @@ export function AdminEditProject() {
 
   const [project, setProject] = useState<Project | null>(null)
   const [notFound, setNotFound] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
   const [title, setTitle] = useState('')
   const [slug, setSlug] = useState('')
@@ -41,6 +42,7 @@ export function AdminEditProject() {
   useEffect(() => {
     if (!id) { setNotFound(true); return }
 
+    setLoadError(null)
     listAllProjectsForAdmin().then((all) => {
       const found = all.find((p) => p.id === id) ?? null
       if (!found) { setNotFound(true); return }
@@ -67,6 +69,8 @@ export function AdminEditProject() {
               },
         ),
       )
+    }).catch(() => {
+      setLoadError('Could not load projects. Check the browser Network tab for the Supabase error.')
     })
   }, [id])
 
@@ -117,6 +121,14 @@ export function AdminEditProject() {
     return (
       <div className="py-24 text-center">
         <p className="text-sm text-white/50">Project not found.</p>
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="py-24 text-center">
+        <p className="text-sm text-red-400/90" role="alert">{loadError}</p>
       </div>
     )
   }

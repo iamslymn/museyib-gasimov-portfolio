@@ -13,6 +13,9 @@ import { STORAGE_BUCKETS, supabase } from './supabase'
 
 const mockStore: Project[] = projectsSeed.map((p) => ({ ...p }))
 
+/** PostgREST embed; fails if FK relationship is missing from API schema — we fall back to a separate query. */
+const PROJECT_SELECT_WITH_IMAGES = '*, project_images(image_url, sort_order)'
+
 // ── Ordering helpers ──────────────────────────────────────────────────────────
 
 /** Apply a saved ID order to a list, leaving unmatched items at the end. */
@@ -109,22 +112,68 @@ function buildGalleryMediaFromEditor(
   return out
 }
 
+async function fetchImagesByProjectIds(
+  projectIds: string[],
+): Promise<Map<string, { image_url: string; sort_order: number }[]>> {
+  const map = new Map<string, { image_url: string; sort_order: number }[]>()
+  if (projectIds.length === 0 || !supabase) return map
+
+  const { data, error } = await supabase
+    .from('project_images')
+    .select('project_id, image_url, sort_order')
+    .in('project_id', projectIds)
+
+  if (error || !data) return map
+
+  for (const row of data) {
+    const pid = row.project_id as string
+    const list = map.get(pid) ?? []
+    list.push({
+      image_url: row.image_url as string,
+      sort_order: row.sort_order as number,
+    })
+    map.set(pid, list)
+  }
+  for (const list of map.values()) {
+    list.sort((a, b) => a.sort_order - b.sort_order)
+  }
+  return map
+}
+
+async function attachProjectImages(rows: DbProject[]): Promise<DbProject[]> {
+  const byProject = await fetchImagesByProjectIds(rows.map((r) => r.id))
+  return rows.map((r) => ({
+    ...r,
+    project_images: byProject.get(r.id) ?? r.project_images ?? [],
+  }))
+}
+
 /**
  * Run a Supabase projects query ordered by sort_order first.
  * Falls back to created_at desc if sort_order column does not exist yet.
+ * If nested `project_images` embed fails (400: missing relationship in API), uses select('*') + batch images.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function queryProjects(apply: (q: any) => any): Promise<Project[]> {
-  const base = () =>
-    apply(supabase!.from('projects').select('*, project_images(image_url, sort_order)'))
+  const fetchRows = async (selectClause: string): Promise<DbProject[]> => {
+    const base = () => apply(supabase!.from('projects').select(selectClause))
 
-  const { data, error } = await base().order('sort_order', { ascending: true, nullsFirst: false })
-  if (!error) return applyClientOrder((data as DbProject[]).map(mapRow))
+    const { data, error } = await base().order('sort_order', { ascending: true, nullsFirst: false })
+    if (!error && data) return data as DbProject[]
 
-  // Column likely does not exist yet — fall back to created_at
-  const { data: d2, error: e2 } = await base().order('created_at', { ascending: false })
-  if (e2) throw e2
-  return applyClientOrder((d2 as DbProject[]).map(mapRow))
+    const { data: d2, error: e2 } = await base().order('created_at', { ascending: false })
+    if (e2) throw e2
+    return (d2 ?? []) as DbProject[]
+  }
+
+  let rows: DbProject[]
+  try {
+    rows = await fetchRows(PROJECT_SELECT_WITH_IMAGES)
+  } catch {
+    rows = await fetchRows('*')
+    rows = await attachProjectImages(rows)
+  }
+  return applyClientOrder(rows.map(mapRow))
 }
 
 // ── Public list functions ─────────────────────────────────────────────────────
@@ -150,7 +199,7 @@ export async function listProjectsByCategory(category: ProjectCategory): Promise
   }
 
   const projects = await queryProjects((q) =>
-    q.eq('is_hidden', false).filter('categories', 'cs', `{"${category}"}`),
+    q.eq('is_hidden', false).contains('categories', [category]),
   )
   if (catOrder && catOrder.length > 0) return applyOrder(projects, catOrder)
   return projects
@@ -169,31 +218,33 @@ export async function listFeaturedProjects(): Promise<Project[]> {
     return applyOrder(featured, featuredOrder)
   }
 
-  // Try ordering by featured_order column
-  const base = supabase
-    .from('projects')
-    .select('*, project_images(image_url, sort_order)')
-    .eq('is_hidden', false)
-    .eq('is_featured', true)
+  const fetchFeaturedRows = async (selectClause: string): Promise<DbProject[]> => {
+    const mk = () =>
+      supabase!
+        .from('projects')
+        .select(selectClause)
+        .eq('is_hidden', false)
+        .eq('is_featured', true)
 
-  const { data, error } = await base.order('featured_order', { ascending: true, nullsFirst: false })
-  if (!error && data) {
-    const rows = (data as DbProject[]).map(mapRow)
-    if (rows.length === 0) return listProjects()
-    return applyOrder(rows, featuredOrder)
+    const { data, error } = await mk().order('featured_order', { ascending: true, nullsFirst: false })
+    if (!error && data) return data as unknown as DbProject[]
+
+    const { data: d2, error: e2 } = await mk().order('created_at', { ascending: false })
+    if (e2) throw e2
+    return (d2 ?? []) as unknown as DbProject[]
   }
 
-  // featured_order column may not exist yet — fall back
-  const { data: d2, error: e2 } = await supabase
-    .from('projects')
-    .select('*, project_images(image_url, sort_order)')
-    .eq('is_hidden', false)
-    .eq('is_featured', true)
-    .order('created_at', { ascending: false })
-  if (e2) throw e2
-  const rows2 = (d2 as DbProject[]).map(mapRow)
-  if (rows2.length === 0) return listProjects()
-  return applyOrder(rows2, featuredOrder)
+  let dbRows: DbProject[]
+  try {
+    dbRows = await fetchFeaturedRows(PROJECT_SELECT_WITH_IMAGES)
+  } catch {
+    dbRows = await fetchFeaturedRows('*')
+    dbRows = await attachProjectImages(dbRows)
+  }
+
+  const rows = dbRows.map(mapRow)
+  if (rows.length === 0) return listProjects()
+  return applyOrder(rows, featuredOrder)
 }
 
 /** Admin only: all projects, including hidden. */
@@ -208,14 +259,25 @@ export async function listAllProjectsForAdmin(): Promise<Project[]> {
 export async function getProjectBySlug(slug: string): Promise<Project | null> {
   if (!supabase) return mockStore.find((p) => p.slug === slug) ?? null
 
-  const { data, error } = await supabase
+  const embedded = await supabase
     .from('projects')
-    .select('*, project_images(image_url, sort_order)')
+    .select(PROJECT_SELECT_WITH_IMAGES)
     .eq('slug', slug)
     .single()
 
-  if (error) return null
-  return mapRow(data as DbProject)
+  if (!embedded.error && embedded.data) {
+    return mapRow(embedded.data as DbProject)
+  }
+
+  const bare = await supabase.from('projects').select('*').eq('slug', slug).single()
+  if (bare.error || !bare.data) return null
+
+  const row = bare.data as DbProject
+  const imgs = await fetchImagesByProjectIds([row.id])
+  return mapRow({
+    ...row,
+    project_images: imgs.get(row.id) ?? [],
+  })
 }
 
 // ── Create / Update / Delete ──────────────────────────────────────────────────
